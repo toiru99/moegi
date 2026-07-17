@@ -46,11 +46,12 @@ def find_engine_home() -> Path | None:
 INSTALL_HELP = """\
 MOEGI 엔진을 찾지 못했습니다. 다음 중 하나로 해결하세요:
 
-  1) 이미 엔진(포터블 dist 또는 소스 트리)이 있다면 그 경로를 지정:
+  1) 자동 설치 (권장):
+       python <플러그인 폴더>/scripts/bootstrap.py
+     최신 엔진 릴리스를 받아 설치합니다. (/moegi:doctor 가 대신 실행해 줄 수 있음)
+  2) 이미 엔진(포터블 dist 또는 소스 트리)이 있다면 그 경로를 지정:
        환경변수  MOEGI_HOME=<엔진 경로>
        (또는 플러그인 설정의 engine_home)
-  2) 아직 없다면 릴리스를 받아 ~/.moegi/engine 에 풀어 두세요.
-       https://github.com/toiru99/moegi 릴리스 페이지 참고.
 
 확인 명령:  /moegi:doctor
 """
