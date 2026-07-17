@@ -20,14 +20,22 @@ moegi MCP 툴로 아래 루프를 돈다.
 3. **정합 검증**: `validate_project(path, game_root)` — 미도달 라벨/누락 에셋 경고를 해소.
 4. **시각 확인**: `render_scene(label, out_path, game_root)` → **Read로 PNG를 열어 직접 본다.**
    배치·표정·연출이 의도와 다르면 .mgs를 고치고 다시 렌더.
+   ⚠ 렌더는 라벨로 **콜드 점프**한다 — 앞 장면에서 깐 @bg/BGM이 승계되지 않으니,
+   렌더로 검증할 라벨은 배경을 라벨 안에서 자급(@bg 명시 — 같은 이미지면 실플레이 무해)
+   하거나, 상태 승계가 중요한 장면은 playtest 스크린샷으로 검증한다.
+   검게 나오면 엔진 로그의 `texture not found`와 assets/ 실재부터 확인.
 5. **플레이 검증** (분기 있는 씬): `playtest(inputs=[{jump},{advance:N},{choose:i}], out_path)`
-   → 최종 state.label이 기대 라벨인지 + 스크린샷 확인.
+   → 최종 state.label이 기대 라벨인지 + 스크린샷 확인. 타이틀 화면은 playtest가
+   자동으로 장면 시작해 준다 — 그래도 최종 state의 `mode`가 `title`이면 진행 실패로 봐라.
 6. 배포 요청 시에만: `pack_game(game_dir, out_mpk)` (또는 `/moegi:ship`).
 
 ## 규칙
 
 - 게임 구조: `{게임 루트}/assets/` + `{게임 루트}/scenario/main.mgs`, 진입 라벨 `:: start`
 - 표정 문법: `@show yuki smile` = `yuki_base.png` + `yuki_smile.png` 합성
+- 위치명(`at ...`)은 그리드 이름만 유효: `left/mid-left/center/mid-right/right`,
+  `far-*`(5종), `near-left/near-center/near-right`, `close` — 없는 이름(예: mid-center)은
+  경고 후 중앙 폴백된다. 좌표 직접 지정은 `x=0.3 y=1.0 scale=1.1`.
 - 샷 프레이밍: `@show ID EXPR shot=full/knees/bust/close` — 전신으로 멍하니 세우지
   말고 대화 씬은 bust/close를 적극 사용. 몸짓 강조는 `@anim ID shake/nod/jump/...`.
 - **⚠ 스탠딩은 계속 남는다(persistence).** `@show`한 캐릭터는 `@hide`/`@exit`/`@hideall`
