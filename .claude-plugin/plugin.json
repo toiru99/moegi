@@ -1,7 +1,7 @@
 {
     "name": "moegi",
     "displayName": "MOEGI — AI 비주얼노벨 제작",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "말 한마디로 비주얼노벨을 만든다. MOEGI 엔진의 대본 컴파일·헤드리스 렌더 검증·AI 에셋 생성(캐릭터/배경/BGM) MCP 툴과 제작 커맨드(/moegi:new, /moegi:continue, /moegi:ship)를 제공.",
     "author": { "name": "toiru99", "url": "https://github.com/toiru99" },
     "repository": "https://github.com/toiru99/moegi",
