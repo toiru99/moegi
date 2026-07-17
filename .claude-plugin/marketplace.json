@@ -1,0 +1,12 @@
+{
+    "name": "moegi",
+    "description": "MOEGI 비주얼노벨 엔진 공식 플러그인 마켓플레이스 — 말 한마디로 VN을 만드는 AI 제작 커맨드와 MCP 툴",
+    "owner": { "name": "toiru99", "url": "https://github.com/toiru99" },
+    "plugins": [
+        {
+            "name": "moegi",
+            "source": "./",
+            "description": "MOEGI — AI 비주얼노벨 제작 (대본 컴파일/렌더 검증/AI 에셋 생성 MCP 툴 + 제작 커맨드)"
+        }
+    ]
+}

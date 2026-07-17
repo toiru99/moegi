@@ -1,0 +1,17 @@
+{
+    "name": "moegi",
+    "displayName": "MOEGI — AI 비주얼노벨 제작",
+    "version": "0.1.0",
+    "description": "말 한마디로 비주얼노벨을 만든다. MOEGI 엔진의 대본 컴파일·헤드리스 렌더 검증·AI 에셋 생성(캐릭터/배경/BGM) MCP 툴과 제작 커맨드(/moegi:new, /moegi:continue, /moegi:ship)를 제공.",
+    "author": { "name": "toiru99", "url": "https://github.com/toiru99" },
+    "repository": "https://github.com/toiru99/moegi",
+    "keywords": ["visual-novel", "game", "moegi", "ai-authoring", "vn"],
+    "mcpServers": "./.mcp.json",
+    "userConfig": {
+        "engine_home": {
+            "type": "string",
+            "title": "엔진 홈 경로",
+            "description": "MOEGI 엔진(포터블 dist 또는 소스 트리) 경로. 비워두면 MOEGI_HOME 환경변수 → 플러그인 데이터 폴더 → ~/.moegi/engine 순으로 찾습니다."
+        }
+    }
+}
