@@ -27,6 +27,9 @@ moegi MCP 툴로 아래 루프를 돈다.
 5. **플레이 검증** (분기 있는 씬): `playtest(inputs=[{jump},{advance:N},{choose:i}], out_path)`
    → 최종 state.label이 기대 라벨인지 + 스크린샷 확인. 타이틀 화면은 playtest가
    자동으로 장면 시작해 준다 — 그래도 최종 state의 `mode`가 `title`이면 진행 실패로 봐라.
+   - `advance` N = 클릭 N회이며 타이핑 중이면 클릭이 완성에 소모된다 — 특정 컷을
+     잡으려면 `{"wait": 초}`를 섞고 state.pc로 위치를 보정하라(스크린샷은 마지막 상태에서 1장).
+   - `port`는 세션 고유 값을 써라(기본 7871; Studio는 7767) — 동시 세션/연속 호출 충돌 방지.
 6. 배포 요청 시에만: `pack_game(game_dir, out_mpk)` (또는 `/moegi:ship`).
 
 ## 규칙
