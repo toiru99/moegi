@@ -42,9 +42,28 @@ def main() -> int:
     if not ok:
         return 1
 
+    print_ai_status(home)
     print()
     print("제작 준비 완료 — 빈 폴더에서 /moegi:new 로 시작하세요.")
     return 0
+
+
+def print_ai_status(home) -> None:
+    """AI 생성 키 설정 여부 — 프로바이더/모델 이름만, 키 값은 절대 출력 금지."""
+    import json
+    cfg = home / "saves" / "llm.json"
+    try:
+        d = json.loads(cfg.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print("  AI 생성: – 미설정 (선택 기능) — 엔진 실행 → [설정 → AI 설정]에서")
+        print("           프로바이더 키를 넣으면 캐릭터/배경/BGM 생성이 켜집니다.")
+        print("           키 없이도 대본·연출 제작과 스타터 에셋은 그대로 사용 가능.")
+        return
+    text = d.get("provider") or "-"
+    image = d.get("imageProvider") or text
+    model = d.get("imageModel") or ""
+    print(f"  AI 생성: ✓ 설정됨 (텍스트={text}, 이미지={image}"
+          + (f", 모델={model}" if model else "") + ")")
 
 
 if __name__ == "__main__":

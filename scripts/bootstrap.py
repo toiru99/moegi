@@ -77,8 +77,14 @@ def download(url: str, dest: Path) -> None:
         print()
 
 
+# 엔진 교체 시 살아남아야 하는 사용자 데이터 — API 키(saves/llm.json),
+# 세이브·해금(saves/), 엔진 홈에서 만든 게임(games/).
+PRESERVE_DIRS = ("saves", "games")
+
+
 def install_zip(zip_path: Path, dest: Path) -> None:
-    """zip을 dest에 설치. 기존 설치는 .old로 밀어두고 교체(실패 시 복원)."""
+    """zip을 dest에 설치. 기존 설치는 .old로 밀어두고 교체(실패 시 복원).
+    교체 후 PRESERVE_DIRS(키·세이브·게임)를 이전 설치에서 이어받는다."""
     backup = None
     if dest.exists():
         backup = dest.with_name(dest.name + ".old")
@@ -92,6 +98,12 @@ def install_zip(zip_path: Path, dest: Path) -> None:
         if not moegi_engine.is_engine_home(dest):
             raise SystemExit("압축은 풀렸지만 엔진 홈 형태가 아닙니다 "
                              "(tools/moegilib.py 없음) — zip이 올바른지 확인")
+        if backup is not None:
+            for d in PRESERVE_DIRS:
+                src = backup / d
+                if src.is_dir() and not (dest / d).exists():
+                    shutil.copytree(src, dest / d)
+                    print(f"  · 기존 {d}/ 이어받음 (키·세이브·게임 보존)")
     except BaseException:
         shutil.rmtree(dest, ignore_errors=True)
         if backup is not None:
