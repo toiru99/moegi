@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo" },
+  "include": ["src/*.ts"],
+  "exclude": ["src/css-modules.d.ts"],
+  "references": [
+    { "path": "../../skill/skill" },
+    { "path": "../../core/system-prompt" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../core/tools" },
+    { "path": "../../credentials/authorization" },
+    { "path": "../../credentials/credentials" },
+    { "path": "../../typert/protocol" }
+  ]
+}

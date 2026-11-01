@@ -1,0 +1,16 @@
+.root { display: flex; flex-direction: column; gap: 14px; padding: 16px; overflow: auto; height: 100%; box-sizing: border-box; color: var(--dsw-alias-label-primary); font-size: 13px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.root button, .root input, .root select, .root textarea { font: inherit; color: var(--dsw-alias-label-primary); background: transparent; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-sm); padding: 7px 9px; }
+.root button { cursor: pointer; font-weight: 500; }
+.root button:disabled { opacity: .5; cursor: default; }
+@media (hover: hover) { .root button:hover:enabled { background: var(--dsw-alias-interactive-bg-hover); } }
+.root label { display: flex; flex-direction: column; gap: 5px; }
+.root textarea { resize: vertical; min-height: 76px; width: 100%; box-sizing: border-box; line-height: 1.6; }
+.root input, .root select { min-width: 0; }
+.root fieldset { border: 0.5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-sm); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.root legend { padding: 0 5px; font-weight: 500; }
+.muted { color: var(--dsw-alias-label-secondary); line-height: 1.5; margin: 0; }
+.row { display: grid; grid-template-columns: minmax(90px, 1fr) auto; gap: 8px; align-items: end; }
+.line { display: flex; flex-direction: column; gap: 8px; border-top: 0.5px solid var(--dsw-alias-border-l3); padding-top: 12px; }
+.notice { border-left: 2px solid currentColor; padding: 8px 12px; overflow-wrap: anywhere; }
+.root a { color: var(--dsw-alias-link); font-weight: 500; text-decoration: none; }

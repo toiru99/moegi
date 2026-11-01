@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.2/vn-studio-empty-projects/guide.md
+/:
+  en: 34bf92634f0f7091
+  zh: c9d7e74a395db0e7
+/vn-studio-project-creation:
+  en: 1479e7dbe2f6796c
+  zh: cea0f7b85758c49d
+/vn-studio-project-creation/change:
+  en: ef1cf0a1f2dbb568
+  zh: 177f500ba25d25c2
+/vn-studio-project-creation/migration:
+  en: 3632e8b3163be864
+  zh: 851a7858a08b7117
