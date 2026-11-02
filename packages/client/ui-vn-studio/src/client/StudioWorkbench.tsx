@@ -37,6 +37,7 @@ export function StudioWorkbench(props: WorkbenchProps) {
   const [artwork, setArtwork] = useState<{ id: string; urls: Record<string, string>; active: string[] }>({ id: '', urls: {}, active: [] })
   const urls = artwork.id === draft?.id ? artwork.urls : {}
   const [assistantArtwork, setAssistantArtwork] = useState('')
+  const [playbackMode, setPlaybackMode] = useState<'recovered' | 'prototype'>()
   const scene = draft?.scenes.find(scene => scene.id === state.sceneId) ?? draft?.scenes[0]
 
   const adopt = (saved: ProjectRevision, replaceDirty = false) => { actions.adopt(saved, replaceDirty); selectProjectUrl(saved.project.id) }
@@ -44,6 +45,11 @@ export function StudioWorkbench(props: WorkbenchProps) {
     if (props.current().busy) return
     actions.busy(true); actions.notice(notice)
     void operation().catch((error: unknown) => { actions.notice(error instanceof Error ? error.message : String(error)) }).finally(() => { actions.busy(false) })
+  }
+  const runSaved = (operation: (id: string) => Promise<void>) => {
+    const current = props.current(), id = current.loaded?.project.id
+    if (current.dirty || id === undefined) return
+    run(async () => { await operation(id) })
   }
   const edit = (change: (project: NovelProject) => void) => {
     if (draft === undefined) return
@@ -53,6 +59,13 @@ export function StudioWorkbench(props: WorkbenchProps) {
     const selected = project.scenes.find(value => value.id === scene?.id)
     if (selected !== undefined) change(selected)
   })
+
+  useEffect(() => {
+    let live = true
+    void props.playbackMode().then(mode => { if (live) setPlaybackMode(mode) })
+      .catch((error: unknown) => { if (live) actions.notice(error instanceof Error ? error.message : String(error)) })
+    return () => { live = false }
+  }, [props.playbackMode, actions])
 
   useEffect(() => {
     if (props.current().initialized) return
@@ -218,7 +231,12 @@ export function StudioWorkbench(props: WorkbenchProps) {
         <Button size="sm" variant="ghost" disabled={busy || dirty} onClick={() => { run(async () => { adopt(await props.read(draft.id)) }) }}>{t('reloadProject')}</Button>
         <Button size="sm" variant="outline" disabled={busy || dirty || !loaded.canUndo} onClick={() => { run(async () => { adopt(await props.undo(draft.id, loaded.revision)) }) }}>{t('undoProject')}</Button>
         <Button size="sm" variant={dirty ? 'primary' : 'outline'} disabled={busy || !dirty || !valid} onClick={() => { run(async () => { adopt(await props.save(draft.id, loaded.revision, draft), true); actions.projects(await props.list()) }) }}>{t('saveProject')}</Button>
-        <Button size="sm" variant="primary" disabled={busy || dirty} icon={<IconPlayOutlineRegular size={14} />} onClick={() => { actions.restartPlayback() }}>{t('restartPlayback')}</Button>
+        <Button size="sm" variant={playbackMode === 'recovered' ? 'ghost' : 'primary'} disabled={busy || dirty} icon={<IconPlayOutlineRegular size={14} />} onClick={() => { actions.restartPlayback() }}>{t('restartPlayback')}</Button>
+        {playbackMode === 'recovered' && props.exportGame !== undefined && <Button size="sm" variant="outline" disabled={busy || dirty} onClick={() => {
+          const exportGame = props.exportGame
+          if (exportGame !== undefined) runSaved(async id => { const receipt = await exportGame(id); actions.notice(t('gameExported', { path: receipt.archivePath })) })
+        }}>{t('exportGame')}</Button>}
+        {playbackMode === 'recovered' && <Button size="sm" variant="primary" disabled={busy || dirty} icon={<IconPlayOutlineRegular size={14} />} onClick={() => { runSaved(props.preview) }}>{t('runGame')}</Button>}
       </div>
     </footer>}
   </div>

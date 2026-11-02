@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,8 +21,6 @@ afterEach(() => { vi.clearAllMocks() })
 
 it.each([
   { label: 'without any engine paths', legacy: {} },
-  { label: 'with legacy recovered engine paths', legacy: { previewDirectory: 'unused-preview', compilerDirectory: 'unused-compiler', fontFile: 'unused-font.ttf', recoveredSystemDirectory: 'unused-original-system', recoveredCompilerExecutable: 'unused-original-compiler.exe' } },
-  { label: 'with a partially configured legacy engine', legacy: { recoveredSystemDirectory: 'unused-original-system' } },
 ])('describes browser playback $label without compiling, spawning or editing the story', async ({ legacy }) => {
   const root = await mkdtemp(join(tmpdir(), 'vn-browser-preview-')), ctx = new Context()
   try {
@@ -73,5 +72,24 @@ it('reports a missing project instead of returning a playable browser URL', asyn
     expect(mocks.compile).not.toHaveBeenCalled()
     expect(mocks.recovered).not.toHaveBeenCalled()
     expect(mocks.spawn).not.toHaveBeenCalled()
+  } finally { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) }
+})
+
+it('runs the configured recovered common-system build and owns process cleanup', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vn-recovered-preview-')), ctx = new Context()
+  const child = Object.assign(new EventEmitter(), { pid: 12345, kill: vi.fn(() => { queueMicrotask(() => child.emit('close')); return true }) })
+  mocks.spawn.mockImplementation(() => { queueMicrotask(() => child.emit('spawn')); return child })
+  mocks.recovered.mockResolvedValue({ directory: join(root, 'runtime'), executable: join(root, 'runtime', 'Game.exe'), args: [] })
+  try {
+    await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime)
+    await ctx.plugin(VnStudio, { projectDirectory: root, recoveredSystemDirectory: join(root, 'templates'), recoveredCompilerExecutable: join(root, 'compiler.exe') })
+    const saved = await ctx.vnStudio.create('demo', 'Story', 'ko')
+    expect(await ctx.vnStudio.playbackMode()).toBe('recovered')
+    expect(await ctx.vnStudio.preview('demo')).toMatchObject({ revision: 0, directory: join(root, 'runtime'), processId: 12345, playback: 'recovered' })
+    expect(mocks.recovered).toHaveBeenCalledWith(saved.project, 0, expect.any(String), join(root, 'templates', 'ko'), join(root, 'compiler.exe'), root, expect.any(AbortSignal))
+    expect(mocks.spawn).toHaveBeenCalledWith(join(root, 'runtime', 'Game.exe'), [], expect.objectContaining({ cwd: join(root, 'runtime'), stdio: 'ignore' }))
+    expect(await ctx.vnStudio.read('demo')).toEqual(saved)
+    await ctx.fiber.dispose()
+    expect(child.kill).toHaveBeenCalledOnce()
   } finally { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) }
 })

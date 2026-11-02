@@ -61,6 +61,7 @@ function registerEditor(ctx: Context): void {
     save: async (id, revision, project) => value(await ctx.remote.vnStudio.save(id, revision, JSON.stringify(project))),
     undo: async (id, revision) => value(await ctx.remote.vnStudio.undo(id, revision)),
     preview: async (id) => { value(await ctx.remote.vnStudio.preview(id)) },
+    exportGame: async id => value(await ctx.remote.vnStudio.exportGame(id)),
   }
   const loginActions: LoginActions = {
     status: async () => value(await ctx.remote.vnChatGpt.status()),

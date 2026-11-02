@@ -13,6 +13,8 @@ export interface EditorActions {
   save: (id: string, revision: number, project: NovelProject) => Promise<ProjectRevision>
   undo: (id: string, revision: number) => Promise<ProjectRevision>
   preview: (id: string) => Promise<void>
+  /** Export the saved project as a playable archive and return its local location. */
+  exportGame?: (id: string) => Promise<{ archivePath: string; bytes: number; revision: number }>
 }
 
 type EditorProps = PropsLocale<'vnStudio'> & InjectFace<EditorActions & { chatGpt: LoginActions }>

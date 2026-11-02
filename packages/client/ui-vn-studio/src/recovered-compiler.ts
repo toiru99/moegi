@@ -7,9 +7,10 @@ import sharp from 'sharp'
 import { AssetStore, assetExtension } from './assets.ts'
 import { composeScene } from './compose-scene.ts'
 import { parseProject, SceneStore } from './store.ts'
-import type { NovelProject, NovelScene, UiSkinRole } from './types.ts'
+import type { NovelProject, NovelScene, SceneVisual, UiSkinRole } from './types.ts'
 
 const START_SCENE = '_vn_studio_start'
+const NEW_GAME_SCENE = '_vn_studio_new_game'
 interface TemplateFile { path: string; bytes: number; sha256: string; role: string }
 interface Template {
   language: 'ko' | 'ja'
@@ -95,15 +96,42 @@ function literal(value: string): string {
 function sceneName(id: string): string { return `vn_s_${createHash('sha256').update(id).digest('hex').slice(0, 24)}` }
 function mediaName(id: string): string { return `vn_a_${createHash('sha256').update(id).digest('hex').slice(0, 24)}` }
 
-function sceneSource(scene: NovelScene, image: string): string {
-  const output = ['#z00', '$$init_script()', '$$user_control_enabled()', 'script.set_auto_savepoint_on()', 'syscom.set_auto_mode_onoff_flag(0)', 'syscom.set_read_skip_onoff_flag(0)', 'script.set_ctrl_skip_disable()', `set_title(${literal(scene.title)})`,
-    'if(1){close()}', `$$set_bg_object(back.object[1], ${literal(image)})`, '$$set_front_wipe_copy_bs_all(0)', '$$set_front_wipe_copy_cg(0)', '$$set_front_wipe_copy_cutin_all(0)', `$$execute_bg_offset_pos(back.object[1], ${literal(image)})`, '$$wipe(3)',
-    scene.visual?.music === undefined ? 'bgm.stop()' : `bgm.play(${literal(mediaName(scene.visual.music))})`]
-  if (scene.visual?.sound !== undefined) output.push(`$$se_play(${literal(mediaName(scene.visual.sound))}, 0, 0, 0, 0)`)
-  for (const line of scene.lines) output.push('savepoint()', `set_namae(${literal(line.speaker)})`, `${literal(line.text)} r()`)
+interface DirectionCue { line: number; image: string; visual?: SceneVisual }
+
+function projectFlags(project: NovelProject): Record<string, string> {
+  const keys = [...new Set(project.scenes.flatMap(scene => scene.choices.flatMap(choice => [...Object.keys(choice.when ?? {}), ...Object.keys(choice.effects ?? {})])))].sort()
+  return Object.fromEntries(keys.map(key => [key, `$vn_studio_flag_${createHash('sha256').update(key).digest('hex').slice(0, 24)}`]))
+}
+
+function sceneSource(scene: NovelScene, cues: DirectionCue[], flags: Record<string, string>): string {
+  const output = ['#z00', '$$init_script()', '$$user_control_enabled()', 'script.set_auto_savepoint_on()', 'syscom.set_auto_mode_onoff_flag(0)', 'syscom.set_read_skip_onoff_flag(0)', 'script.set_ctrl_skip_disable()', `set_title(${literal(scene.title)})`]
+  let previousMusic: string | undefined
+  const emitCue = (cue: DirectionCue, first: boolean) => {
+    const visual = cue.visual
+    output.push('if(1){close()}', `$$set_bg_object(back.object[1], ${literal(cue.image)})`, '$$set_front_wipe_copy_bs_all(0)', '$$set_front_wipe_copy_cg(0)', '$$set_front_wipe_copy_cutin_all(0)', `$$execute_bg_offset_pos(back.object[1], ${literal(cue.image)})`)
+    output.push(...visual?.transition === 'dissolve' ? ['$$set_wipe_param(0)', '$$set_wipe_time(280)', '$$execute_wipe()', '$$init_wipe_param()'] : ['$$wipe(99)'])
+    if (first || visual?.music !== previousMusic) output.push(visual?.music === undefined ? 'bgm.stop()' : `bgm.play(${literal(mediaName(visual.music))})`)
+    previousMusic = visual?.music
+    if (visual?.sound !== undefined) output.push(`$$se_play(${literal(mediaName(visual.sound))}, 0, 0, 0, 0)`)
+  }
+  if (scene.lines[0]?.visual === undefined) emitCue(cues[0]!, true)
+  for (const [index, line] of scene.lines.entries()) {
+    output.push('savepoint()')
+    const cue = cues.find(cue => cue.line === index)
+    if (cue !== undefined) emitCue(cue, index === 0)
+    output.push(`set_namae(${literal(line.speaker)})`, `${literal(line.text)} r()`)
+  }
   if (scene.choices.length !== 0) {
-    output.push('savepoint()', `a[10] = selbtn(${scene.choices.map(choice => literal(choice.text)).join(', ')})`, 'clear()')
-    scene.choices.forEach((choice, index) => { output.push(`if(a[10] == ${index}){jump(${literal(sceneName(choice.target))})}`) })
+    const choiceArgs = scene.choices.map(choice => {
+      const condition = Object.entries(choice.when ?? {}).map(([key, value]) => `(${flags[key]} == ${value ? 1 : 0})`).join(' && ')
+      return `${literal(choice.text)}${condition === '' ? '' : `, ${condition}`}`
+    })
+    output.push('savepoint()', `a[10] = selbtn(${choiceArgs.join(', ')})`, 'clear()')
+    scene.choices.forEach((choice, index) => {
+      output.push(`if(a[10] == ${index}){`)
+      for (const [key, value] of Object.entries(choice.effects ?? {})) output.push(`${flags[key]} = ${value ? 1 : 0}`)
+      output.push(`jump(${literal(sceneName(choice.target))})}`)
+    })
   }
   output.push('#l1', 'timewait(100000000)', 'goto #l1')
   return `${output.join('\n')}\n`
@@ -309,7 +337,10 @@ export async function compileRecoveredProject(
       await mkdir(dirname(destination), { recursive: true }); await writeFile(destination, bytes, { flag: 'wx' })
     }
     const menu = join(source, '_menu.ss')
-    await writeFile(menu, bindMenu(await readFile(menu, 'utf8'), sceneName(validated.entry)), 'utf8')
+    const flags = projectFlags(validated)
+    await writeFile(join(source, '__vn_studio_flags.inc'), `${Object.values(flags).map(name => `#property ${name} : int`).join('\n')}\n`, 'utf8')
+    await writeFile(join(source, `${NEW_GAME_SCENE}.ss`), `#z00\n${Object.values(flags).map(name => `${name} = 0`).join('\n')}\njump(${literal(sceneName(validated.entry))})\n`, 'utf8')
+    await writeFile(menu, bindMenu(await readFile(menu, 'utf8'), NEW_GAME_SCENE), 'utf8')
     await writeFile(join(source, `${START_SCENE}.ss`), `#z00\n$$first_boot()\nset_title(${literal(validated.title)})\njump("_menu")\n`, 'utf8')
     const assetStore = projectDirectory === undefined ? undefined : new AssetStore(new SceneStore(projectDirectory), 20 * 1024 * 1024)
     await Promise.all(['g00', 'bgm', 'wav'].map(directory => mkdir(join(runtime, directory), { recursive: true })))
@@ -325,7 +356,7 @@ export async function compileRecoveredProject(
       await writeFile(join(runtime, titleAudio.file), await assetStore.bytes(validated.id, titleAsset.id))
     }
     const music: string[] = []
-    const used = new Set(validated.scenes.flatMap(scene => [scene.visual?.music, scene.visual?.sound]).filter(id => id !== undefined))
+    const used = new Set(validated.scenes.flatMap(scene => [scene.visual, ...scene.lines.map(line => line.visual)].flatMap(visual => [visual?.music, visual?.sound])).filter(id => id !== undefined))
     for (const asset of validated.assets ?? []) {
       if (!used.has(asset.id)) continue
       if (assetStore === undefined) throw new Error('Project asset storage is unavailable.')
@@ -333,14 +364,20 @@ export async function compileRecoveredProject(
       await writeFile(join(runtime, directory, `${name}.${assetExtension(asset)}`), await assetStore.bytes(validated.id, asset.id))
       if (asset.kind === 'music') music.push(name)
     }
+    const directionScenes: Record<string, { cues: DirectionCue[]; lineCount: number }> = {}
     for (const scene of validated.scenes) {
       signal?.throwIfAborted()
-      const image = `${sceneName(scene.id)}_bg`
-      const pixels = assetStore === undefined ? await sharp({ create: { width: 1920, height: 1080, channels: 4, background: '#243649' } }).png().toBuffer() : await sharp(await composeScene(validated, scene, assetStore)).resize(1920, 1080, { fit: 'fill' }).png().toBuffer()
-      const png = join(staging, `${image}.png`)
-      await writeFile(png, pixels)
-      await runCompiler(compiler, ['-g', '--c', '--type', '0', png, join(runtime, 'g00', `${image}.g00`)], signal)
-      await writeFile(join(source, `${sceneName(scene.id)}.ss`), sceneSource(scene, image), 'utf8')
+      const cues: DirectionCue[] = [{ line: -1, image: `${sceneName(scene.id)}_bg`, ...scene.visual === undefined ? {} : { visual: scene.visual } },
+        ...scene.lines.flatMap((line, index) => line.visual === undefined ? [] : [{ line: index, image: `${sceneName(scene.id)}_cue_${index}`, visual: line.visual }])]
+      for (const cue of cues) {
+        signal?.throwIfAborted()
+        const pixels = assetStore === undefined ? await sharp({ create: { width: 1920, height: 1080, channels: 4, background: '#243649' } }).png().toBuffer() : await sharp(await composeScene(validated, scene, assetStore, cue.line < 0 ? undefined : cue.line)).resize(1920, 1080, { fit: 'fill' }).png().toBuffer()
+        const png = join(staging, `${cue.image}.png`)
+        await writeFile(png, pixels)
+        await runCompiler(compiler, ['-g', '--c', '--type', '0', png, join(runtime, 'g00', `${cue.image}.g00`)], signal)
+      }
+      directionScenes[scene.id] = { cues, lineCount: scene.lines.length }
+      await writeFile(join(source, `${sceneName(scene.id)}.ss`), sceneSource(scene, cues, flags), 'utf8')
     }
     const configPath = join(staging, template.configSource), originalConfig = await readFile(configPath, 'utf8')
     const config = originalConfig.split(/\r?\n/).filter(line => !/^\s*#(?:TWITTER[.\w]*|START_SCENE|CAPTION|GAMENAME|BGM\.(?:CNT|\d+))\s*=/i.test(line)).join('\n')
@@ -351,7 +388,7 @@ export async function compileRecoveredProject(
     for (const generated of ['Scene.pck', 'Gameexe.dat']) if ((await lstat(await regularFile(runtime, generated))).size === 0) throw new Error('Recovered compiler produced an empty runtime artifact.')
     const saveTarget = await attachSaves(runtime, projectDirectory ?? buildRoot, validated.id, template.saveDirectoryName)
     await writeFile(join(staging, 'authoring.json'), JSON.stringify({ revision, project: validated }, null, 2), 'utf8')
-    await writeFile(join(staging, 'recovered-build.json'), JSON.stringify({ schemaVersion: 1, templateManifestSha256: createHash('sha256').update(manifestBytes).digest('hex'), language: template.language, entryScene: sceneName(validated.entry), startupScene: START_SCENE, sourceNames: Object.fromEntries(validated.scenes.map(scene => [scene.id, sceneName(scene.id)])), modifiedCommonSources: [{ path: `${template.sourceDirectory}/_menu.ss`, binding: 'Three original scenario-flow jumps redirected to authored entry.' }], titleAudio, skinBindings, saveTarget }, null, 2), 'utf8')
+    await writeFile(join(staging, 'recovered-build.json'), JSON.stringify({ schemaVersion: 1, templateManifestSha256: createHash('sha256').update(manifestBytes).digest('hex'), language: template.language, entryScene: sceneName(validated.entry), startupScene: START_SCENE, sourceNames: Object.fromEntries(validated.scenes.map(scene => [scene.id, sceneName(scene.id)])), modifiedCommonSources: [{ path: `${template.sourceDirectory}/_menu.ss`, binding: 'Three original scenario-flow jumps redirected through new-game flag initialization to authored entry.' }], directionBindings: { flags, newGameScene: NEW_GAME_SCENE, scenes: directionScenes }, titleAudio, skinBindings, saveTarget }, null, 2), 'utf8')
     signal?.throwIfAborted()
     await rename(staging, output)
     return { directory: join(output, template.runtimeDirectory), executable: join(output, template.engineFile), args: [] }

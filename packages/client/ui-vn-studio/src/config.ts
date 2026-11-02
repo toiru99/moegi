@@ -5,7 +5,7 @@ export interface Config {
   projectDirectory: string
   /** Optional image work location retained from legacy profiles. */
   previewDirectory?: string
-  /** Ignored engine settings retained so existing profiles still load. */
+  /** Legacy independent-native settings retained for profile compatibility. */
   compilerDirectory?: string
   fontFile?: string
   maxAssetBytes?: number

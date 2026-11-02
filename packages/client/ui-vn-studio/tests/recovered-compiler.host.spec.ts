@@ -145,6 +145,63 @@ it('uses the original menus and art, preserves all authored lines and escapes te
   expect(await readdir(f.builds)).toEqual(['story'])
 })
 
+it('keeps flag conditions and effects in saved shared properties and resets them only through a new game', async () => {
+  const f = await fixture(), authored = project()
+  authored.scenes[0]!.choices[0]!.effects = { chose_ayaka: true }
+  authored.scenes[0]!.choices[1]!.effects = { chose_ayaka: false }
+  authored.scenes[1]!.choices = [{ text: 'Remembered', target: 'right', when: { chose_ayaka: true } }, { text: 'Other route', target: 'right', when: { chose_ayaka: false } }]
+  const result = await compileRecoveredProject(authored, 3, f.builds, f.base, process.execPath, f.storage)
+  const snapshot = dirname(result.directory)
+  const metadata = JSON.parse(await readFile(join(snapshot, 'recovered-build.json'), 'utf8'))
+  const property = metadata.directionBindings.flags.chose_ayaka
+  expect(property).toMatch(/^\$vn_studio_flag_[a-f0-9]+$/)
+  expect(await readFile(join(snapshot, 'src/__vn_studio_flags.inc'), 'utf8')).toContain(`#property ${property} : int`)
+  const start = await readFile(join(snapshot, 'src', `${metadata.sourceNames.start}.ss`), 'utf8')
+  expect(start).toContain(`${property} = 1`)
+  expect(start).toContain(`${property} = 0`)
+  const left = await readFile(join(snapshot, 'src', `${metadata.sourceNames.left}.ss`), 'utf8')
+  expect(left).toContain(`selbtn("Remembered", (${property} == 1), "Other route", (${property} == 0))`)
+  expect(left).not.toContain(`${property} = 0`)
+  expect(await readFile(join(snapshot, 'src/_menu.ss'), 'utf8')).toContain('jump("_vn_studio_new_game")')
+  expect(await readFile(join(snapshot, 'src/_vn_studio_new_game.ss'), 'utf8')).toContain(`${property} = 0`)
+})
+
+it('compiles line snapshots, transitions and cue-only audio without dropping dialogue or replaying music', async () => {
+  const f = await fixture(), scenes = new SceneStore(f.storage), assets = new AssetStore(scenes)
+  await scenes.create('story', 'Cues', 'ko')
+  const image = await sharp({ create: { width: 8, height: 8, channels: 4, background: '#ff0000' } }).png().toBuffer()
+  let saved = await assets.import('story', 0, 'background', 'CG', image)
+  const cg = saved.project.assets![0]!.id
+  saved = await assets.import('story', saved.revision, 'music', 'Cue music', silenceWave())
+  const music = saved.project.assets!.find(asset => asset.kind === 'music')!.id
+  saved = await assets.import('story', saved.revision, 'sound', 'Cue sound', silenceWave())
+  const sound = saved.project.assets!.find(asset => asset.kind === 'sound')!.id
+  const authored = project(); authored.assets = saved.project.assets!
+  authored.scenes[0]!.lines = [{ speaker: 'A', text: 'First' }, { speaker: 'B', text: 'Second', visual: { characters: [], cg, music, sound, transition: 'cut' } }, { speaker: 'C', text: 'Third', visual: { characters: [], cg, music, sound, transition: 'dissolve' } }]
+  const result = await compileRecoveredProject(authored, 4, f.builds, f.base, process.execPath, f.storage)
+  const snapshot = dirname(result.directory), metadata = JSON.parse(await readFile(join(snapshot, 'recovered-build.json'), 'utf8'))
+  const source = await readFile(join(snapshot, 'src', `${metadata.sourceNames.start}.ss`), 'utf8')
+  expect(source.match(/set_namae\(/g)).toHaveLength(3)
+  expect(source.match(/bgm.play\(/g)).toHaveLength(1)
+  expect(source.match(/\$\$se_play\(/g)).toHaveLength(2)
+  expect(source).toContain('$$wipe(99)')
+  expect(source).toContain('$$set_wipe_param(0)\n$$set_wipe_time(280)\n$$execute_wipe()\n$$init_wipe_param()')
+  expect(metadata.directionBindings.scenes.start.cues.map((cue: { line: number }) => cue.line)).toEqual([-1, 1, 2])
+  const cue = metadata.directionBindings.scenes.start.cues[1]
+  const pixels = await sharp(await readFile(join(result.directory, 'g00', `${cue.image}.g00`))).raw().toBuffer()
+  expect([...pixels.subarray(0, 3)]).toEqual([255, 0, 0])
+  expect((await readdir(join(result.directory, 'bgm'))).some(file => file.startsWith('vn_a_'))).toBe(true)
+  expect((await readdir(join(result.directory, 'wav'))).some(file => file.startsWith('vn_a_'))).toBe(true)
+})
+
+function silenceWave(): Buffer {
+  const data = Buffer.alloc(44 + 400)
+  data.write('RIFF'); data.writeUInt32LE(data.length - 8, 4); data.write('WAVEfmt ', 8)
+  data.writeUInt32LE(16, 16); data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22); data.writeUInt32LE(8000, 24)
+  data.writeUInt32LE(16000, 28); data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34); data.write('data', 36); data.writeUInt32LE(400, 40)
+  return data
+}
+
 it('refuses a tampered or traversing template before publishing a runtime snapshot', async () => {
   const f = await fixture()
   await writeFile(join(f.base, 'runtime/g00/_sys_sel_btn.g00'), 'tampered')

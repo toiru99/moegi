@@ -6,6 +6,7 @@ import { expect, it } from 'vitest'
 import { SceneStore } from '../src/store.ts'
 import { AssetStore } from '../src/assets.ts'
 import { composeScene } from '../src/compose-scene.ts'
+import type { NovelScene } from '../src/types.ts'
 
 it('uses the same bottom-centre placement and clipped edges as the authoring stage', async () => {
   const root = await mkdtemp(join(tmpdir(), 'vn-composite-'))
@@ -27,5 +28,26 @@ it('uses the same bottom-centre placement and clipped edges as the authoring sta
     scene.visual.characters[0]!.y = 0
     const above = await sharp(await composeScene(saved.project, scene, assets)).removeAlpha().raw().toBuffer()
     expect([...above.subarray(0, 3)]).toEqual([255, 0, 0])
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+it('composes cue CGs and the authored close framing and unfocused character treatment', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vn-cue-composite-'))
+  try {
+    const scenes = new SceneStore(root), assets = new AssetStore(scenes)
+    await scenes.create('demo', 'Stage', 'ko')
+    const image = async (color: string) => sharp({ create: { width: 100, height: 100, channels: 4, background: color } }).png().toBuffer()
+    let saved = await assets.import('demo', 0, 'background', 'Red CG', await image('#ff0000'))
+    saved = await assets.import('demo', saved.revision, 'character', 'White character', await image('#ffffff'))
+    const [cg, character] = saved.project.assets!
+    const scene: NovelScene = { id: 'start', title: 'Test', choices: [], visual: { characters: [] }, lines: [
+      { speaker: '', text: 'Close', visual: { characters: [{ asset: character!.id, x: 50, y: 100, scale: .5 }, { asset: character!.id, x: 10, y: 100, scale: .1 }], shot: 'close', focus: 1 } },
+      { speaker: '', text: 'CG', visual: { characters: [{ asset: character!.id, x: 50, y: 100, scale: 1 }], cg: cg!.id } },
+    ] }
+    const close = await sharp(await composeScene(saved.project, scene, assets, 0)).removeAlpha().raw().toBuffer()
+    const pixel = (x: number, y: number) => [...close.subarray((y * 1280 + x) * 3, (y * 1280 + x) * 3 + 3)]
+    expect(pixel(400, 500)).toEqual([140, 140, 140])
+    const cgPixels = await sharp(await composeScene(saved.project, scene, assets, 1)).removeAlpha().raw().toBuffer()
+    expect([...cgPixels.subarray((500 * 1280 + 640) * 3, (500 * 1280 + 640) * 3 + 3)]).toEqual([255, 0, 0])
   } finally { await rm(root, { recursive: true, force: true }) }
 })

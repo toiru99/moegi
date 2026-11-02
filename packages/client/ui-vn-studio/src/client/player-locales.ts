@@ -1,5 +1,6 @@
 /** Reusable game-system and production-pack copy, independent of story content. */
 export const playerEn = {
+  runGame: 'Run game', exportGame: 'Export game', gameExported: 'Game exported to {path}',
   gameFlagLimit: 'This choice exceeds the game state limit. Your current progress is unchanged.',
   directorUnavailable: 'Enable the installed production director to inspect the production plan.',
   gameStale: 'The story changed. Reload the project and choose a compatible game save.',
@@ -10,6 +11,7 @@ export const playerEn = {
 }
 export type PlayerKey = keyof typeof playerEn
 export const playerKo: Record<PlayerKey, string> = {
+  runGame: '게임 실행', exportGame: '게임 내보내기', gameExported: '게임을 {path}에 내보냈어요.',
   gameFlagLimit: '이 선택은 게임 상태 한도를 넘어요. 현재 진행은 그대로 유지돼요.',
   directorUnavailable: '설치된 제작 디렉터를 켜면 제작 계획과 진행 상황을 확인할 수 있어요.',
   gameStale: '작품이 바뀌었어요. 제작 파일을 새로 읽고 호환되는 게임 세이브를 골라 주세요.',
@@ -19,6 +21,7 @@ export const playerKo: Record<PlayerKey, string> = {
   directorRequest: '현재 미연시 "{title}"(작품 ID: {id})를 설치된 vn_director 미연시 제작 기본팩으로 이어서 제작해줘. 작품과 스킬을 읽고 인물, 점진적인 관계 변화, 장면별 목적, 필요한 모든 배경·캐릭터·음악·효과음의 제작 계획부터 저장해줘. 구체적인 함께하는 활동과 연속성을 담아 계획한 장면을 충분히 집필해줘. 사용 가능한 제공자로 소재를 만들고 실제로 배치하되 기존 내용과 소재를 보존해줘. status로 검수하고 남은 작업을 정직하게 알려줘. 내가 이미지나 음악 제작을 별도로 요청할 때까지 기다리지 마.',
 }
 export const playerJa: Record<PlayerKey, string> = {
+  runGame: 'ゲームを起動', exportGame: 'ゲームを書き出す', gameExported: 'ゲームを{path}に書き出しました。',
   gameFlagLimit: 'この選択はゲーム状態の上限を超えます。現在の進行は保持されます。',
   directorUnavailable: '制作ディレクターを有効にすると計画と進行状況を確認できます。',
   gameStale: '作品が変更されました。制作ファイルを再読み込みし、対応するセーブを選んでください。',
@@ -28,6 +31,7 @@ export const playerJa: Record<PlayerKey, string> = {
   directorRequest: '作品「{title}」(ID: {id})を標準のvn_director制作パックで続けてください。作品とスキルを読み、人物、段階的な関係変化、場面の目的、背景・人物絵・音楽・効果音の計画を保存してください。共同作業や連続性を描き、場面を十分に執筆してください。利用可能な生成手段で素材を作り配置し、既存内容を保持してください。statusで確認し、未完了の作業を正確に報告してください。美術や音楽を別途頼むまで待たないでください。',
 }
 export const playerZh: Record<PlayerKey, string> = {
+  runGame: '运行游戏', exportGame: '导出游戏', gameExported: '游戏已导出至{path}。',
   gameFlagLimit: '此选项超过游戏状态上限，当前进度保持不变。',
   directorUnavailable: '启用已安装的制作导演即可查看计划和进度。',
   gameStale: '作品已更改。请重新读取制作文件并选择兼容的游戏存档。',
