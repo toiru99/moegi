@@ -4,7 +4,7 @@ import { creatorEn, creatorZh, creatorKo, creatorJa } from './creator-locales.ts
 export const en = {
   ...creatorEn,
   brandName: 'VN Studio', connectionTitle: 'ChatGPT', connectionHint: 'Connect your ChatGPT account to write scenes with the agent.',
-  title: 'Novel studio', description: 'Write scenes and preview in Siglus',
+  title: 'Novel studio', description: 'Write scenes and play your visual novel',
   newProject: 'New project', projectId: 'Project id', projectTitle: 'Project title',
   language: 'Language', korean: 'Korean', japanese: 'Japanese', create: 'Create',
   open: 'Open project', reload: 'Reload', save: 'Save', undo: 'Undo saved edit', preview: 'Play game',
@@ -15,7 +15,7 @@ export const en = {
   saved: 'Saved', working: 'Working…', revision: 'Revision', empty: 'Create or open a project to start writing.',
   signIn: 'Sign in with ChatGPT', connected: 'ChatGPT connected', cancelLogin: 'Cancel sign-in',
   continueLogin: 'Continue in browser', loginAnswer: 'Sign-in response', submitAnswer: 'Continue', loginFailed: 'Sign-in failed. Please try again.',
-  dirty: 'Unsaved changes', discard: 'Discard unsaved changes?', playing: 'Opened in Siglus',
+  dirty: 'Unsaved changes', discard: 'Discard unsaved changes?', playing: 'Playing in VN Studio',
 } satisfies Record<string, string>
 
 export type VnStudioKey = keyof typeof en
@@ -27,7 +27,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const zh = {
   ...creatorZh,
   brandName: 'VN Studio', connectionTitle: 'ChatGPT', connectionHint: '连接ChatGPT账号，使用智能体编写场景。',
-  title: '视觉小说工作室', description: '编写场景并在Siglus中运行',
+  title: '视觉小说工作室', description: '编写场景并游玩视觉小说',
   newProject: '新建项目', projectId: '项目ID', projectTitle: '作品标题',
   language: '语言', korean: '韩语', japanese: '日语', create: '创建',
   open: '打开项目', reload: '重新加载', save: '保存', undo: '撤销已保存的更改', preview: '运行游戏',
@@ -38,13 +38,13 @@ export const zh = {
   saved: '已保存', working: '正在处理…', revision: '修订', empty: '创建或打开项目以开始编写。',
   signIn: '使用ChatGPT登录', connected: '已连接ChatGPT', cancelLogin: '取消登录',
   continueLogin: '在浏览器中继续', loginAnswer: '登录回复', submitAnswer: '继续', loginFailed: '登录失败，请重试。',
-  dirty: '未保存的更改', discard: '放弃未保存的更改', playing: '已在Siglus中打开',
+  dirty: '未保存的更改', discard: '放弃未保存的更改', playing: '正在 VN Studio 中游玩',
 } satisfies Record<VnStudioKey, string>
 
 export const ko = {
   ...creatorKo,
   brandName: 'VN Studio', connectionTitle: 'ChatGPT', connectionHint: 'ChatGPT 계정을 연결해 에이전트와 장면을 작성하세요.',
-  title: '미연시 스튜디오', description: '장면을 만들고 Siglus로 실행하기',
+  title: '미연시 스튜디오', description: '장면을 만들고 미연시 플레이하기',
   newProject: '새 프로젝트', projectId: '프로젝트 ID', projectTitle: '작품 제목',
   language: '언어', korean: '한국어', japanese: '일본어', create: '만들기',
   open: '프로젝트 열기', reload: '새로 읽기', save: '저장', undo: '저장한 변경 되돌리기', preview: '게임 실행',
@@ -55,13 +55,13 @@ export const ko = {
   saved: '저장됨', working: '처리 중…', revision: '버전', empty: '프로젝트를 만들거나 열어 이야기를 시작하세요.',
   signIn: 'ChatGPT로 로그인', connected: 'ChatGPT 연결됨', cancelLogin: '로그인 취소',
   continueLogin: '브라우저에서 계속', loginAnswer: '로그인 응답', submitAnswer: '계속', loginFailed: '로그인에 실패했어요. 다시 시도해 주세요.',
-  dirty: '저장하지 않은 변경', discard: '저장하지 않은 변경을 버릴까요?', playing: 'Siglus에서 실행 중',
+  dirty: '저장하지 않은 변경', discard: '저장하지 않은 변경을 버릴까요?', playing: 'VN Studio에서 플레이 중',
 } satisfies Record<VnStudioKey, string>
 
 export const ja = {
   ...creatorJa,
   brandName: 'VN Studio', connectionTitle: 'ChatGPT', connectionHint: 'ChatGPTアカウントを接続してエージェントとシーンを作成します。',
-  title: 'ノベルスタジオ', description: 'シーンを作りSiglusで実行',
+  title: 'ノベルスタジオ', description: 'シーンを作りビジュアルノベルをプレイ',
   newProject: '新規プロジェクト', projectId: 'プロジェクトID', projectTitle: '作品名',
   language: '言語', korean: '韓国語', japanese: '日本語', create: '作成',
   open: 'プロジェクトを開く', reload: '再読込', save: '保存', undo: '保存した変更を元に戻す', preview: 'ゲーム実行',
@@ -72,5 +72,5 @@ export const ja = {
   saved: '保存済み', working: '処理中…', revision: 'リビジョン', empty: 'プロジェクトを作成または開いてください。',
   signIn: 'ChatGPTでログイン', connected: 'ChatGPT接続済み', cancelLogin: 'ログインをキャンセル',
   continueLogin: 'ブラウザで続ける', loginAnswer: 'ログインの回答', submitAnswer: '続ける', loginFailed: 'ログインに失敗しました。再試行してください。',
-  dirty: '未保存の変更', discard: '未保存の変更を破棄しますか？', playing: 'Siglusで実行中',
+  dirty: '未保存の変更', discard: '未保存の変更を破棄しますか？', playing: 'VN Studioでプレイ中',
 } satisfies Record<VnStudioKey, string>

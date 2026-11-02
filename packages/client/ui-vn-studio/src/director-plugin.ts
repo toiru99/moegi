@@ -89,7 +89,7 @@ export class VnDirector extends TypertRemoteService {
     ctx.effect(() => async () => { this.stopped.abort(); await Promise.allSettled([...this.pending]) }, 'vn-director.operations')
     ctx.tools.register(defineTool({
       name: 'vn_director',
-      description: 'Make a developed visual novel chapter, including production planning, paced writing and required media. Use automatically for new-game requests. Read before mutations and use the current revision. planJson is {version:1,premise,tone,pacing:{minScenes,minBeats,maxBeats},cast:[{id,name,voice,desire}],scenes:[{id,title,purpose,sharedActivity,relationshipBefore,relationshipAfter,relationshipChange:"none"|"small"|"major",beats:string[],continuity:string[]}],media:[{id,kind:"background"|"character"|"music"|"sound",name,sceneIds:string[],prompt?,scoreJson?,preset?:"bell"|"rain"|"steps",assetId?}]}. scoreJson accepts a score object or its JSON string. Plan adds empty scene placeholders and preserves existing content/assets. write_scene takes sceneJson {id,lines:[{speaker,text}],title?,choices?:[{text,target}],visual?}; omitted choices/visual roles retain saved values, with at most three visible characters per scene. prepare_media prefers ready codex-images, generates bounded pending jobs with actual local scores/effects and, in recovered mode, original title/logo, cursor and dialogue-frame images automatically; it preserves occupied roles and reports blocked or unassigned work, including status.uiSkin. Mutations return {id,revision,changedSceneIds,changedMediaIds,addedAssetIds,counts:{scenes,beats,assets,mediaTasks}}, plus status for prepare_media. Use the returned revision to continue remaining executable jobs; read returns the full project. Do not loop on blocked tasks or mark a goal complete while required media remains pending, blocked or unassigned. status derives pacing, continuity, actual file and assignment warnings without literary scores.',
+      description: 'Make a developed visual novel chapter, including production planning, paced writing and required media. Use automatically for new-game requests. Read before mutations and use the current revision. planJson is {version:1,premise,tone,pacing:{minScenes,minBeats,maxBeats},cast:[{id,name,voice,desire}],scenes:[{id,title,purpose,sharedActivity,relationshipBefore,relationshipAfter,relationshipChange:"none"|"small"|"major",beats:string[],continuity:string[]}],media:[{id,kind:"background"|"character"|"music"|"sound",name,sceneIds:string[],prompt?,scoreJson?,preset?:"bell"|"rain"|"steps",assetId?}]}. scoreJson accepts a score object or its JSON string. Plan adds empty scene placeholders and preserves existing content/assets. write_scene takes sceneJson {id,lines:[{speaker,text}],title?,choices?:[{text,target}],visual?}; omitted choices/visual roles retain saved values, with at most three visible characters per scene. prepare_media prefers ready codex-images, generates bounded pending jobs with actual local scores/effects and project-owned title/logo, cursor and dialogue-frame images for the independent browser player automatically; it preserves occupied roles and reports blocked or unassigned work, including status.uiSkin. Mutations return {id,revision,changedSceneIds,changedMediaIds,addedAssetIds,counts:{scenes,beats,assets,mediaTasks}}, plus status for prepare_media. Use the returned revision to continue remaining executable jobs; read returns the full project. Do not loop on blocked tasks or mark a goal complete while required media remains pending, blocked or unassigned. status derives pacing, continuity, actual file and assignment warnings without literary scores.',
       parameters: {
         action: { type: 'string', enum: ['plan', 'read', 'status', 'write_scene', 'prepare_media'], required: true },
         id: { type: 'string', description: 'Existing project id.', required: true },
@@ -155,14 +155,13 @@ export class VnDirector extends TypertRemoteService {
 
   private async productionStatus(saved: ProjectRevision, providers: ProductionStatus['providers'], available: Set<string>, signal: AbortSignal): Promise<ProductionStatus> {
     const status = deriveProductionStatus(saved, providers, available)
-    if (await this.ctx.vnStudio.playbackMode() !== 'recovered') return status
     signal.throwIfAborted()
     const skin = this.ctx.get('vnSkin')
-    if (skin === undefined) throw new Error('Recovered playback requires the VN Studio interface artwork service. Reload the VN Studio plugin.')
+    if (skin === undefined) throw new Error('Production requires the VN Studio interface artwork service. Reload the VN Studio plugin.')
     const uiSkin = await skin.status(saved.project.id)
     signal.throwIfAborted()
     return { ...status, uiSkin, ready: status.ready && uiSkin.ready,
-      warnings: [...status.warnings, ...uiSkin.roles.filter(role => role.state !== 'ready').map(role => ({ code: 'ui-skin-incomplete', message: `Original ${role.role} artwork is ${role.state}. Prepare project interface artwork before finishing production.` }))] }
+      warnings: [...status.warnings, ...uiSkin.roles.filter(role => role.state !== 'ready').map(role => ({ code: 'ui-skin-incomplete', message: `Project ${role.role} artwork is ${role.state}. Prepare project interface artwork before finishing production.` }))] }
   }
 
   /** Save the complete production bible in the ordinary project revision and undo history.
@@ -244,9 +243,9 @@ export class VnDirector extends TypertRemoteService {
         saved = await bindProductionMedia(this.ctx.vnStudio.documents, saved, task.id, asset, signal)
         if (saved.revision !== previousRevision) jobs++
       }
-      if (jobs < this.config.maxMediaJobs && await this.ctx.vnStudio.playbackMode() === 'recovered') {
+      if (jobs < this.config.maxMediaJobs) {
         const skin = this.ctx.get('vnSkin')
-        if (skin === undefined) throw new Error('Recovered playback requires the VN Studio interface artwork service. Reload the VN Studio plugin.')
+        if (skin === undefined) throw new Error('Production requires the VN Studio interface artwork service. Reload the VN Studio plugin.')
         const prepared = await skin.prepareWithSignal(id, saved.revision, undefined, Math.min(3, this.config.maxMediaJobs - jobs), undefined, signal)
         saved = prepared.saved
       }

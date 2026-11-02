@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-vn-studio",
-  "description": "Local Siglus visual novel authoring tools and editor for Harness",
-  "version": "0.2.2-alpha.2-vn.14",
+  "description": "Local visual novel authoring tools and independent browser player",
+  "version": "0.2.2-alpha.2-vn.15",
   "publishConfig": {
     "access": "public"
   },

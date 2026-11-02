@@ -48,6 +48,10 @@ export function createStudioStore() {
       },
       edit: (state, project: NovelProject) => { state.draft = project; state.dirty = true },
       discard: (state) => { state.draft = state.loaded?.project; state.dirty = false; state.sceneId = state.loaded?.project.entry ?? 'start'; state.line = 0; state.playbackRun++ },
+      restartPlayback: (state) => {
+        if (state.draft === undefined) return
+        state.sceneId = state.draft.entry; state.line = 0; state.playbackRun++
+      },
       startNew: (state) => {
         if (state.dirty) throw new Error('Unsaved changes must be saved or discarded before starting another project.')
         state.loaded = undefined; state.draft = undefined; state.line = 0; state.notice = ''

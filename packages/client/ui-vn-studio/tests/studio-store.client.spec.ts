@@ -26,3 +26,17 @@ it('resets rehearsal position on an external story replacement and clamps manual
   instance.actions.adopt({ ...shortened, revision: 3, project: { ...shortened.project, scenes: [{ ...shortened.project.scenes[0]!, lines: [] }] } }, true)
   expect(instance.getSnapshot().line).toBe(0)
 })
+
+it('restarts only playback position while preserving the exact authored draft and saved revision', () => {
+  const instance = createStudioStore().create()
+  const saved = { revision: 9, canUndo: true, project: { id: 'demo', title: 'Own story', language: 'ko' as const, entry: 'start', scenes: [
+    { id: 'start', title: 'Opening', lines: [{ speaker: '', text: 'Keep this line.' }], choices: [] },
+    { id: 'next', title: 'Next', lines: [{ speaker: '', text: 'Keep this too.' }], choices: [] },
+  ] } }
+  instance.actions.adopt(saved); instance.actions.scene('next'); instance.actions.line(1)
+  const draft = { ...saved.project, title: 'Unsaved title' }
+  instance.actions.edit(draft)
+  instance.actions.restartPlayback()
+  expect(instance.getSnapshot()).toMatchObject({ dirty: true, sceneId: 'start', line: 0, playbackRun: 1, draft, loaded: saved })
+  expect(instance.getSnapshot().draft).toBe(draft)
+})

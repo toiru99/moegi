@@ -9,7 +9,7 @@ import { Stage } from './Stage.tsx'
 import { advancePlayback, playbackFingerprint, rememberPlayback } from './player-state.ts'
 import css from './Player.module.css'
 
-/** Reusable rehearsal systems change gameplay position and never authored content. */
+/** Independent browser gameplay changes play position and never authored content. */
 export function Player({ project, scene, line, urls, dirty, navigate, face, t }: PropsLocale<'vnStudio'> & {
   project: NovelProject; scene: NovelScene; line: number; urls: Record<string, string>; dirty: boolean
   navigate(position: PlaybackPosition): void; face: PlayerActions
@@ -23,6 +23,7 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
   const [unlocked, setUnlocked] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [skin, setSkin] = useState<{ title?: string; dialogue?: string; cursor?: string }>({})
   const music = useRef<HTMLAudioElement | null>(null), effect = useRef<HTMLAudioElement | null>(null)
   const currentSettings = useRef(settings)
   currentSettings.current = settings
@@ -41,6 +42,54 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
     void face.playerSettings(project.id).then(value => { if (live) setSettings(value) }).catch((error: unknown) => { if (live) setNotice(String(error)) })
     return () => { live = false }
   }, [project.id, face.playerSettings])
+
+  useEffect(() => {
+    let live = true, image: HTMLImageElement | undefined
+    setSkin({})
+    const roles = ['title', 'dialogue', 'cursor'] as const
+    const requested = roles.flatMap(role => project.uiSkin?.[role] === undefined ? [] : [{ role, asset: project.uiSkin[role] }])
+    void Promise.allSettled(requested.map(async ({ role, asset }) => ({ role, url: await face.assetData(project.id, asset) }))).then(results => {
+      if (!live) return
+      const ready: typeof skin = {}
+      for (const result of results) {
+        if (result.status === 'rejected') { setNotice(t('gameArtworkUnavailable')); continue }
+        const { role, url } = result.value
+        if (role !== 'cursor') { ready[role] = url; continue }
+        image = new Image()
+        image.onload = () => {
+          if (!live || image === undefined) return
+          const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+          const context = canvas.getContext('2d')
+          if (context === null || image.naturalWidth === 0 || image.naturalHeight === 0) { setNotice(t('gameArtworkUnavailable')); return }
+          try {
+            context.drawImage(image, 0, 0)
+            const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+            let left = canvas.width, top = canvas.height, right = -1, bottom = -1
+            for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+              // Ignore faint shadows when locating the visible pointer and its upper-left hotspot.
+              if (pixels[(y * canvas.width + x) * 4 + 3]! < 32) continue
+              left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
+            }
+            if (right < left || bottom < top) { setNotice(t('gameArtworkUnavailable')); return }
+            const width = right - left + 1, height = bottom - top + 1, scale = Math.min(32 / width, 32 / height)
+            canvas.width = 32; canvas.height = 32
+            context.clearRect(0, 0, 32, 32)
+            context.drawImage(image, left, top, width, height, 0, 0, width * scale, height * scale)
+            const cursor = canvas.toDataURL('image/png'); setSkin(previous => ({ ...previous, cursor }))
+          }
+          catch (error) {
+            // A browser that cannot export the cursor keeps its ordinary accessible pointer.
+            if (error instanceof Error) setNotice(t('gameArtworkUnavailable'))
+            else throw error
+          }
+        }
+        image.onerror = () => { if (live) setNotice(t('gameArtworkUnavailable')) }
+        image.src = url
+      }
+      setSkin(ready)
+    })
+    return () => { live = false; if (image !== undefined) { image.onload = null; image.onerror = null; image.src = '' } }
+  }, [project.id, project.uiSkin?.title, project.uiSkin?.dialogue, project.uiSkin?.cursor, face.assetData, t])
 
   useEffect(() => {
     if (!sound || !unlocked || scene.visual?.music === undefined) return
@@ -91,8 +140,8 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
   }) }
   const open = (next: typeof menu) => { stop(); setMenu(next); if (next === 'save' || next === 'load') void run(async () => { setSaves(await face.gameSaves(project.id)) }) }
   const close = () => { setMenu(undefined) }
-  return <div className={css.player}>
-    <Stage project={project} scene={scene} line={line} urls={urls} next={advance} textScale={settings.textSize / 100} choose={sceneId => {
+  return <div className={css.player} data-custom-cursor={skin.cursor === undefined ? undefined : true} style={skin.cursor === undefined ? undefined : { cursor: `url("${skin.cursor}") 0 0, auto` }}>
+    <Stage project={project} scene={scene} line={line} urls={urls} dialogueFrame={skin.dialogue} next={advance} textScale={settings.textSize / 100} choose={sceneId => {
       stop(); setUnlocked(true); setHistory(previous => rememberPlayback(previous, position)); navigate({ sceneId, line: 0 })
     }} t={t} />
     <div className={css.controls} role="group" aria-label={t('gameControls')}>
@@ -109,8 +158,8 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
     </div>
     {dirty && <p className={css.hint}>{t('saveDraftFirst')}</p>}
     {notice !== '' && <p className={css.hint} role="status">{notice}</p>}
-    <Modal open={menu !== undefined} onClose={close} title={menu === 'title' ? project.title : t(menu === 'save' ? 'saveSlots' : menu === 'load' ? 'loadSlots' : menu === 'history' ? 'backlog' : 'gameSettings')} closeLabel={t('closeGameMenu')} contentClassName={css.modalContent!}>
-      {menu === 'title' && <div className={css.titleCard}><h3>{project.title}</h3><Button variant="primary" data-modal-autofocus onClick={() => { setHistory([]); navigate({ sceneId: project.entry, line: 0 }); close(); setUnlocked(true) }}>{t('gameStart')}</Button></div>}
+    <Modal open={menu !== undefined} onClose={close} title={menu === 'title' ? project.title : t(menu === 'save' ? 'saveSlots' : menu === 'load' ? 'loadSlots' : menu === 'history' ? 'backlog' : 'gameSettings')} closeLabel={t('closeGameMenu')} className={css.modal!} contentClassName={css.modalContent!}>
+      {menu === 'title' && <div className={css.titleCard}>{skin.title && <img className={css.titleArtwork} src={skin.title} alt={t('titleArtwork')} />}<h3>{project.title}</h3><Button variant="primary" disabled={dirty || busy} data-modal-autofocus onClick={() => { setHistory([]); navigate({ sceneId: project.entry, line: 0 }); close(); setUnlocked(true) }}>{t('gameStart')}</Button></div>}
       {(menu === 'save' || menu === 'load') && <div className={css.slots}>
         <p className={css.hint}>{t('gameSaveHint')}</p>
         {Array.from({ length: 6 }, (_, index) => index + 1).map(slot => {

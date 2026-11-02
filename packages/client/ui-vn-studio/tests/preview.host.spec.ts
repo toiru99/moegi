@@ -1,11 +1,14 @@
-import { EventEmitter } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeTools from '@deepseek-ai/dsh-tool-executor-native'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
+import { Config } from '../src/config.ts'
 
 const mocks = vi.hoisted(() => ({ compile: vi.fn(), recovered: vi.fn(), spawn: vi.fn() }))
 vi.mock('../src/compiler.ts', () => ({ compileProject: mocks.compile }))
@@ -13,101 +16,62 @@ vi.mock('../src/recovered-compiler.ts', () => ({ compileRecoveredProject: mocks.
 vi.mock('node:child_process', async original => ({ ...await original<typeof import('node:child_process')>(), spawn: mocks.spawn }))
 const { VnStudio } = await import('../src/controller.ts')
 
-function player() { return Object.assign(new EventEmitter(), { pid: 123, kill: vi.fn<() => boolean>() }) }
+afterEach(() => { vi.clearAllMocks() })
 
-it('does not launch a player when disposal occurs while compilation is pending', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'vn-preview-'))
-  const ctx = new Context()
-  let finish!: (directory: string) => void
-  mocks.compile.mockImplementation(() => new Promise<string>(resolve => { finish = resolve }))
-  mocks.spawn.mockImplementation(() => {
-    const child = player()
-    child.kill.mockImplementation(() => { queueMicrotask(() => { child.emit('close') }); return true })
-    queueMicrotask(() => { child.emit('spawn') })
-    return child
-  })
+it.each([
+  { label: 'without any engine paths', legacy: {} },
+  { label: 'with legacy recovered engine paths', legacy: { previewDirectory: 'unused-preview', compilerDirectory: 'unused-compiler', fontFile: 'unused-font.ttf', recoveredSystemDirectory: 'unused-original-system', recoveredCompilerExecutable: 'unused-original-compiler.exe' } },
+  { label: 'with a partially configured legacy engine', legacy: { recoveredSystemDirectory: 'unused-original-system' } },
+])('describes browser playback $label without compiling, spawning or editing the story', async ({ legacy }) => {
+  const root = await mkdtemp(join(tmpdir(), 'vn-browser-preview-')), ctx = new Context()
   try {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
-    await ctx.plugin(VnStudio, { projectDirectory: root, previewDirectory: root, compilerDirectory: root, fontFile: 'test.ttf' })
+    await ctx.plugin(VnStudio, { projectDirectory: root, ...legacy })
     const studio = ctx.get('vnStudio')!
-    await studio.create('demo', 'Demo', 'ko')
-    const pending = studio.preview('demo')
-    await vi.waitFor(() => { expect(mocks.compile).toHaveBeenCalledOnce() })
-    const disposed = ctx.fiber.dispose()
-    await vi.waitFor(() => { expect(mocks.compile.mock.calls[0]?.[5]?.aborted).toBe(true) })
-    finish(root)
-    await expect(pending).rejects.toThrow(/abort|disposed/i)
-    await disposed
+    const original = await studio.create('my_story-2', 'My own story', 'ko')
+    const saved = await studio.save('my_story-2', original.revision, JSON.stringify({ ...original.project, scenes: [{ ...original.project.scenes[0]!, lines: [{ speaker: 'Guide', text: 'Keep this authored line.' }] }] }))
+    expect(await studio.playbackMode()).toBe('prototype')
+    expect(await studio.preview('my_story-2')).toEqual({ revision: saved.revision, projectId: 'my_story-2', playback: 'browser', url: '/?project=my_story-2' })
+    expect(await studio.read('my_story-2')).toEqual(saved)
+    expect(await readdir(root)).toEqual(['my_story-2.json'])
+    expect(mocks.compile).not.toHaveBeenCalled()
+    expect(mocks.recovered).not.toHaveBeenCalled()
     expect(mocks.spawn).not.toHaveBeenCalled()
-  } finally {
-    finish?.(root)
-    await ctx.fiber.dispose()
-    await rm(root, { recursive: true, force: true })
-    mocks.compile.mockReset()
-    mocks.spawn.mockReset()
-  }
+  } finally { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) }
 })
 
-it('waits for the owned player to close before disposal completes', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'vn-preview-'))
-  const ctx = new Context()
-  let child!: ReturnType<typeof player>
-  mocks.compile.mockResolvedValue(root)
-  mocks.spawn.mockImplementation(() => {
-    child = player()
-    child.kill.mockReturnValue(true)
-    queueMicrotask(() => { child.emit('spawn') })
-    return child
-  })
+it('accepts the authoring directory as the only required path', () => {
+  expect(Config({ projectDirectory: 'stories' })).toMatchObject({ projectDirectory: 'stories' })
+})
+
+it('returns the browser preview URL through the project tool without claiming a native process started', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vn-browser-preview-tool-')), ctx = new Context()
   try {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
-    await ctx.plugin(VnStudio, { projectDirectory: root, previewDirectory: root, compilerDirectory: root, fontFile: 'test.ttf' })
-    const studio = ctx.get('vnStudio')!
-    await studio.create('demo', 'Demo', 'ko')
-    await studio.preview('demo')
-    let finished = false
-    const disposed = ctx.fiber.dispose().then(() => { finished = true })
-    await vi.waitFor(() => { expect(child.kill).toHaveBeenCalled() })
-    expect(finished).toBe(false)
-    child.emit('close')
-    await disposed
-    expect(finished).toBe(true)
-  } finally {
-    child?.emit('close')
-    await ctx.fiber.dispose()
-    await rm(root, { recursive: true, force: true })
-    mocks.compile.mockReset()
-    mocks.spawn.mockReset()
-  }
+    await ctx.plugin(NativeTools)
+    await ctx.plugin(VnStudio, { projectDirectory: root })
+    await ctx.vnStudio.create('demo', 'My own story', 'ja')
+    const result = await executeToolFixture(ctx, { callId: ToolCallId('browser-preview'), name: 'vn_project', arguments: { action: 'preview', id: 'demo' }, signal: new AbortController().signal })
+    expect(result.isError).not.toBe(true)
+    const text = result.content.filter(item => item.type === 'text').map(item => item.text).join('\n')
+    expect(JSON.parse(text)).toEqual({ revision: 0, projectId: 'demo', playback: 'browser', url: '/?project=demo' })
+    expect(mocks.compile).not.toHaveBeenCalled()
+    expect(mocks.recovered).not.toHaveBeenCalled()
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  } finally { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) }
 })
 
-it('launches the recovered original runtime and never falls back to generated prototype menus', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'vn-recovered-preview-'))
-  const ctx = new Context()
-  let child!: ReturnType<typeof player>
-  mocks.recovered.mockResolvedValue({ directory: join(root, 'runtime'), executable: join(root, 'runtime', 'Original.exe'), args: [] })
-  mocks.spawn.mockImplementation(() => {
-    child = player(); child.kill.mockImplementation(() => { queueMicrotask(() => child.emit('close')); return true })
-    queueMicrotask(() => child.emit('spawn')); return child
-  })
+it('reports a missing project instead of returning a playable browser URL', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vn-browser-preview-missing-')), ctx = new Context()
   try {
-    await ctx.plugin(SystemPrompt); await ctx.plugin(ToolRuntime)
-    await ctx.plugin(VnStudio, { projectDirectory: root, previewDirectory: root, compilerDirectory: root, fontFile: 'test.ttf', recoveredSystemDirectory: join(root, 'systems'), recoveredCompilerExecutable: join(root, 'ssu.exe') })
-    const studio = ctx.get('vnStudio')!
-    await studio.create('original', 'My own story', 'ko')
-    expect(await studio.playbackMode()).toBe('recovered')
-    await studio.preview('original')
-    expect(mocks.recovered).toHaveBeenCalledWith(expect.objectContaining({ id: 'original' }), 0, root, join(root, 'systems', 'ko'), join(root, 'ssu.exe'), root, expect.any(AbortSignal))
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(VnStudio, { projectDirectory: root })
+    await expect(ctx.vnStudio.preview('missing')).rejects.toThrow()
     expect(mocks.compile).not.toHaveBeenCalled()
-    expect(mocks.spawn).toHaveBeenCalledWith(join(root, 'runtime', 'Original.exe'), [], expect.objectContaining({ cwd: join(root, 'runtime') }))
-    mocks.recovered.mockRejectedValue(new Error('Recovered UI resource missing'))
-    await expect(studio.preview('original')).rejects.toThrow('Recovered UI resource missing')
-    expect(mocks.compile).not.toHaveBeenCalled()
-    expect(mocks.spawn).toHaveBeenCalledTimes(1)
-  } finally {
-    child?.emit('close'); await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true })
-    mocks.compile.mockReset(); mocks.recovered.mockReset(); mocks.spawn.mockReset()
-  }
+    expect(mocks.recovered).not.toHaveBeenCalled()
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  } finally { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) }
 })

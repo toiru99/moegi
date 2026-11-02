@@ -10,12 +10,13 @@ import { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import sharp from 'sharp'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 import { VnStudio } from '../src/controller.ts'
 import { VnMedia } from '../src/media.ts'
 import { VnSkin } from '../src/ui-skin.ts'
 import * as Director from '../src/director-plugin.ts'
 import type { NovelProduction } from '../src/types.ts'
+import type { Config as StudioConfig } from '../src/config.ts'
 
 class UnconfiguredCredentials extends CredentialProvider {
   async resolve() { return undefined }
@@ -43,7 +44,7 @@ function plan(): NovelProduction {
     ] }
 }
 
-async function setup(skills = true, directorConfig: Partial<Director.Config> = {}) {
+async function setup(skills = true, directorConfig: Partial<Director.Config> = {}, mediaConfig: Partial<StudioConfig> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'vn-director-')), ctx = new Context()
   try {
     await ctx.plugin(SystemPrompt)
@@ -51,7 +52,7 @@ async function setup(skills = true, directorConfig: Partial<Director.Config> = {
     await ctx.plugin(NativeTools)
     if (skills) await ctx.plugin(Skills)
     await ctx.plugin(UnconfiguredCredentials)
-    const config = { projectDirectory: root, previewDirectory: join(root, 'previews'), compilerDirectory: root, fontFile: join(root, 'font.ttf'), codexImageEnabled: false }
+    const config = { projectDirectory: root, codexImageEnabled: false, ...mediaConfig }
     await ctx.plugin(VnStudio, config)
     await ctx.plugin(VnMedia, config)
     await ctx.plugin(VnSkin)
@@ -60,6 +61,18 @@ async function setup(skills = true, directorConfig: Partial<Director.Config> = {
     return { ctx, root, fiber, dispose: async () => { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }) } }
   } catch (error) { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }); throw error }
 }
+
+it('starts authoring and image providers without any legacy engine directories', async () => {
+  const fixture = await setup(false, {}, { codexImageEnabled: true, codexExecutable: join(tmpdir(), 'vn-no-codex-installed-fixture.exe') })
+  try {
+    expect(await fixture.ctx.vnMedia.providers.status()).toEqual([
+      { id: 'codex-images', kinds: ['background', 'character'], ready: false },
+      { id: 'openai-images', kinds: ['background', 'character'], ready: false },
+    ])
+    await fixture.ctx.vnStudio.create('demo', 'Browser story', 'ko')
+    expect(await fixture.ctx.vnStudio.preview('demo')).toMatchObject({ projectId: 'demo', playback: 'browser', url: '/?project=demo' })
+  } finally { await fixture.dispose() }
+})
 
 it('automatically contributes its real packaged skill and tool, and removes them when unloaded', async () => {
   const fixture = await setup()
@@ -108,7 +121,10 @@ it('returns compact model mutation receipts and keeps full project reads and rem
     expect(prepared.value).toMatchObject({ id: 'demo', revision: 5, changedSceneIds: ['start'], changedMediaIds: ['theme'], addedAssetIds: [expect.stringMatching(/^asset_/)],
       counts: { scenes: 2, beats: 2, assets: 1, mediaTasks: 4 }, status: { revision: 5, ready: false } })
     expect(prepared.value.status.media.find((task: { id: string }) => task.id === 'theme')).toMatchObject({ assetId: prepared.value.addedAssetIds[0], state: 'ready' })
-    expect(prepared.text).not.toContain('dialogue')
+    expect(prepared.text).not.toContain('Prior dialogue must not be echoed in mutation receipts.')
+    expect(prepared.text).not.toContain('New dialogue stays in the saved scene.')
+    expect(prepared.value.status.uiSkin).toMatchObject({ ready: false, providerReady: false,
+      roles: [{ role: 'title', state: 'blocked' }, { role: 'cursor', state: 'blocked' }, { role: 'dialogue', state: 'blocked' }] })
     expect(prepared.text).not.toContain(production.premise)
     expect(prepared.value).not.toHaveProperty('saved')
     const resumed = await call('prepare_media', prepared.value.revision)
@@ -122,7 +138,7 @@ it('returns compact model mutation receipts and keeps full project reads and rem
   } finally { await fixture.dispose() }
 })
 
-it('automatically prepares project-owned UI art in recovered mode within the shared media budget', async () => {
+it('automatically prepares project-owned UI art for browser playback within the shared media budget', async () => {
   const fixture = await setup(false, { maxMediaJobs: 1 })
   const { ctx } = fixture
   try {
@@ -133,7 +149,7 @@ it('automatically prepares project-owned UI art in recovered mode within the sha
     let saved = await ctx.vnDirector.plan('demo', 0, JSON.stringify(production))
     saved = await ctx.vnDirector.writeScene('demo', saved.revision, JSON.stringify({ id: 'start', lines: Array.from({ length: 12 }, (_, n) => ({ speaker: '', text: `An action and reply ${n}` })) }))
     for (let count = 0; count < production.media.length; count++) saved = (await ctx.vnDirector.prepareMedia('demo', saved.revision)).saved
-    vi.spyOn(ctx.vnStudio, 'playbackMode').mockResolvedValue('recovered')
+    expect(await ctx.vnStudio.playbackMode()).toBe('prototype')
     const originalScenes = saved.project.scenes
     expect(await ctx.vnDirector.status('demo')).toMatchObject({ ready: false, uiSkin: { ready: false, roles: [ { role: 'title', state: 'pending' }, { role: 'cursor', state: 'pending' }, { role: 'dialogue', state: 'pending' } ] } })
     for (let count = 1; count <= 3; count++) {
@@ -173,6 +189,9 @@ it('activates without the optional skill registry and keeps unavailable images v
     saved = await ctx.vnDirector.writeScene('demo', saved.revision, JSON.stringify({ id: 'start', lines: Array.from({ length: 12 }, (_, n) => ({ speaker: '', text: `The books settle ${n}` })) }))
     const result = await ctx.vnDirector.prepareMedia('demo', saved.revision)
     expect(result.status.media.map(task => [task.id, task.state])).toEqual([['room', 'blocked'], ['sora', 'blocked'], ['theme', 'ready'], ['bell', 'ready']])
+    expect(result.status.uiSkin).toMatchObject({ ready: false, providerReady: false,
+      roles: [{ role: 'title', state: 'blocked' }, { role: 'cursor', state: 'blocked' }, { role: 'dialogue', state: 'blocked' }] })
+    expect(result.status.warnings.filter(warning => warning.code === 'ui-skin-incomplete')).toHaveLength(3)
     expect(result.saved.project.assets?.map(asset => asset.kind)).toEqual(['music', 'sound'])
     const music = result.saved.project.assets!.find(asset => asset.kind === 'music')!
     expect((await ctx.vnMedia.assets.bytes('demo', music.id)).toString('ascii', 0, 4)).toBe('RIFF')
@@ -190,13 +209,14 @@ it('uses a ready image provider and binds admitted images with real audio into t
   const { ctx } = fixture
   try {
     const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
-    ctx.vnMedia.providers.register({ id: 'fixture-images', kinds: ['background', 'character'], ready: async () => true, generate: async () => png })
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], ready: async () => true, generate: async () => png })
     await ctx.vnStudio.create('demo', 'Room', 'ko')
     let saved = await ctx.vnDirector.plan('demo', 0, JSON.stringify(plan()))
     saved = await ctx.vnDirector.writeScene('demo', saved.revision, JSON.stringify({ id: 'start', lines: Array.from({ length: 12 }, (_, n) => ({ speaker: '', text: `A concrete action and reply ${n}` })) }))
     const result = await ctx.vnDirector.prepareMedia('demo', saved.revision)
     expect(result.status.ready).toBe(true)
     expect(result.status.media.map(task => task.state)).toEqual(['ready', 'ready', 'ready', 'ready'])
+    expect(result.status.uiSkin).toMatchObject({ ready: true, roles: [{ role: 'title', state: 'ready' }, { role: 'cursor', state: 'ready' }, { role: 'dialogue', state: 'ready' }] })
     expect(result.saved.project.scenes[0]?.visual).toMatchObject({ background: expect.stringMatching(/^asset_/), music: expect.stringMatching(/^asset_/), sound: expect.stringMatching(/^asset_/),
       characters: [{ asset: expect.stringMatching(/^asset_/), x: 50, y: 100, scale: 0.85 }] })
     const again = await ctx.vnDirector.prepareMedia('demo', result.saved.revision)
@@ -222,6 +242,26 @@ it('cancels a model tool waiting on images without importing or binding late pro
     expect((await ctx.vnStudio.read('demo')).project.assets).toBeUndefined()
     expect((await ctx.vnStudio.read('demo')).revision).toBe(saved.revision)
   } finally { await fixture.dispose() }
+})
+
+it('forwards model cancellation while preparing browser interface artwork without admitting late images', async () => {
+  const fixture = await setup(false)
+  const { ctx } = fixture
+  const entered = Promise.withResolvers<void>(), finished = Promise.withResolvers<Buffer>()
+  try {
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], ready: async () => true,
+      generate: async () => { entered.resolve(); return finished.promise } })
+    await ctx.vnStudio.create('demo', 'Room', 'ko')
+    const production = plan(); production.media = []
+    const saved = await ctx.vnDirector.plan('demo', 0, JSON.stringify(production))
+    const controller = new AbortController()
+    const pending = executeToolFixture(ctx, { callId: ToolCallId('cancel-interface-artwork'), name: 'vn_director', arguments: { action: 'prepare_media', id: 'demo', revision: saved.revision }, signal: controller.signal })
+    await entered.promise
+    controller.abort()
+    finished.resolve(Buffer.from('late interface image'))
+    expect((await pending).isError).toBe(true)
+    expect(await ctx.vnStudio.read('demo')).toEqual(saved)
+  } finally { finished.resolve(Buffer.from('late interface image')); await fixture.dispose() }
 })
 
 it('bounds each preparation call and resumes pending media using the returned revision', async () => {

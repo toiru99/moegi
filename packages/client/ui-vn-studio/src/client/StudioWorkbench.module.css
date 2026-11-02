@@ -34,11 +34,14 @@
 .stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-interactive-bg-hover-solid); container-type: inline-size; }
 .background { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .character { position: absolute; object-fit: fill; }
+.dialogueFrame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.stage[data-skinned="true"] .dialogueBox { left: 20%; right: 10%; bottom: 2%; min-height: 21%; padding: 1.2% 3%; border: 0; background: transparent; color: var(--dsw-alias-toast-label); text-shadow: 0 1px 3px var(--dsw-alias-bg-mask-photo); }
+.stage[data-skinned="true"] .speakerName { color: inherit; font-weight: 600; }
 .dialogueBox { position: absolute; bottom: 5%; left: 4%; right: 4%; display: flex; flex-direction: column; gap: 6px; min-height: 22%; border: .5px solid var(--dsw-alias-border-l3); background: color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent); color: var(--dsw-alias-label-primary); padding: 2% 3%; text-align: start; border-radius: var(--dsw-radius-sm); font-family: inherit; font-size: clamp(11px, 2.4cqw, 18px); line-height: 1.6; cursor: pointer; }
 .speakerName { font-weight: 500; font-size: .86em; color: var(--dsw-alias-state-business-primary); }
 .advance { position: absolute; right: 2%; bottom: 5%; font-size: .85em; }
 .stageChoices { max-height: 52%; overflow: auto; position: absolute; top: 15%; left: 18%; right: 18%; display: flex; flex-direction: column; gap: 8px; z-index: 1; }
-.stageChoices button { border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-sm); background: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent); color: var(--dsw-alias-label-primary); padding: 8px; cursor: pointer; font: inherit; font-size: clamp(11px, 2.2cqw, 16px); }
+.stageChoices button { height: auto; min-height: 36px; background: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent); color: var(--dsw-alias-label-primary); padding: 8px; font: inherit; font-size: clamp(11px, 2.2cqw, 16px); }
 .stageHint { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.5; margin: 8px 0 16px; }
 .editorTabs { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 12px; border-bottom: .5px solid var(--dsw-alias-border-l3); }
 .editing { border: 0; padding: 16px 0 0; margin: 0; min-width: 0; }

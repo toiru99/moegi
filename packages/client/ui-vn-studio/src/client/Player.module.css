@@ -1,10 +1,13 @@
 .player { min-width: 0; }
+.player[data-custom-cursor] button { cursor: inherit; }
 .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; padding: 7px 3px; border: .5px solid var(--dsw-alias-border-l3); border-top: 0; border-radius: 0 0 var(--dsw-radius-sm) var(--dsw-radius-sm); background: var(--dsw-alias-bg-layer-1); }
 .hint { margin: 8px 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
-.modalContent { width: min(600px, calc(100vw - 64px)); max-height: 75vh; overflow: auto; }
+.modal { width: min(640px, 100%); max-height: 100%; min-width: 0; }
+.modalContent { width: 100%; max-height: 100%; min-height: 0; min-width: 0; overflow: auto; }
 .slots, .settings { display: flex; flex-direction: column; gap: 12px; }
 .slot { display: flex; justify-content: space-between; align-items: center; gap: 18px; border-bottom: .5px solid var(--dsw-alias-border-l3); padding: 12px 0; }
 .slot > div { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.slot > button { flex: none; }
 .slot strong { font-size: 13px; font-weight: 500; }
 .slot span, .slot p { margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .slot span { color: var(--dsw-alias-label-secondary); }
@@ -14,5 +17,8 @@
 .history strong { font-size: 12px; font-weight: 500; color: var(--dsw-alias-state-business-primary); }
 .settings label { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .settings input[type="number"] { padding: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-sm); }
-.titleCard { display: flex; flex-direction: column; gap: 24px; padding: 32px 8px; text-align: center; }
-.titleCard h3 { font-size: 26px; font-weight: 500; }
+.settings input { box-sizing: border-box; width: 100%; min-width: 0; }
+.titleCard { display: flex; flex-direction: column; gap: 20px; padding: 8px 0; text-align: center; min-width: 0; }
+.titleCard h3 { margin: 0; font-size: 26px; font-weight: 500; overflow-wrap: anywhere; }
+.titleArtwork { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--dsw-radius-sm); }
+@media (max-width: 420px) { .slot { flex-wrap: wrap; gap: 10px; } .slot > div { flex-basis: 100%; } }

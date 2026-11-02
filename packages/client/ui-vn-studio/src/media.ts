@@ -32,7 +32,7 @@ export class VnMedia extends TypertRemoteService {
     this.imageModel = config.imageModel ?? 'gpt-image-2.5-sunburst'
     this.assets = new AssetStore(ctx.vnStudio.documents, this.maxBytes)
     if (config.codexImageEnabled !== false) ctx.effect(() => {
-      const provider = codexImages({ executable: config.codexExecutable ?? 'codex', directory: join(config.previewDirectory, 'codex-images'), timeoutMs: config.codexImageTimeoutMs ?? 300000, maxBytes: this.maxBytes })
+      const provider = codexImages({ executable: config.codexExecutable ?? 'codex', directory: join(config.previewDirectory ?? join(config.projectDirectory, '.media-work'), 'codex-images'), timeoutMs: config.codexImageTimeoutMs ?? 300000, maxBytes: this.maxBytes })
       const release = this.providers.register(provider)
       return async () => { release(); await provider.dispose() }
     }, 'vn-studio.codex-image-provider')

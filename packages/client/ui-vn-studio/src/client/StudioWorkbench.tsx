@@ -6,7 +6,6 @@ import type { NovelAsset, NovelProject, NovelScene, ProjectRevision } from '../t
 import type { CreatorActions } from './creator-actions.ts'
 import type { StudioBinding } from './studio-store.ts'
 import { Player } from './Player.tsx'
-import { Stage } from './Stage.tsx'
 import { ProductionPanel } from './ProductionPanel.tsx'
 import { DialogueEditor } from './DialogueEditor.tsx'
 import { SceneSettings } from './SceneSettings.tsx'
@@ -36,7 +35,6 @@ export function StudioWorkbench(props: WorkbenchProps) {
   const setLanguage = (language: 'ko' | 'ja') => { actions.welcome({ language }) }
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [assistantArtwork, setAssistantArtwork] = useState('')
-  const [playbackMode, setPlaybackMode] = useState<'recovered' | 'prototype'>()
   const scene = draft?.scenes.find(scene => scene.id === state.sceneId) ?? draft?.scenes[0]
 
   const adopt = (saved: ProjectRevision, replaceDirty = false) => { actions.adopt(saved, replaceDirty); selectProjectUrl(saved.project.id) }
@@ -53,12 +51,6 @@ export function StudioWorkbench(props: WorkbenchProps) {
     const selected = project.scenes.find(value => value.id === scene?.id)
     if (selected !== undefined) change(selected)
   })
-
-  useEffect(() => {
-    let live = true
-    void props.playbackMode().then(mode => { if (live) setPlaybackMode(mode) }).catch((error: unknown) => { if (live) actions.notice(error instanceof Error ? error.message : String(error)) })
-    return () => { live = false }
-  }, [props.playbackMode, actions])
 
   useEffect(() => {
     if (props.current().initialized) return
@@ -198,14 +190,8 @@ export function StudioWorkbench(props: WorkbenchProps) {
             }}>{t('addScene')}</Button>
           </nav>
           <div className={css.sceneMain}>
-            {playbackMode === 'prototype'
-              ? <Player key={`${playbackIdentity}:${state.playbackRun}`} project={draft} scene={scene} line={state.line} urls={urls} dirty={dirty} navigate={position => { actions.scene(position.sceneId); actions.line(position.line) }} face={props} t={t} />
-              : <>
-                <Stage project={draft} scene={scene} line={state.line} urls={urls} artOnly next={() => {}} choose={() => {}} t={t} />
-                <p className={css.stageHint}>{t(playbackMode === 'recovered' ? 'recoveredPlaybackHint' : 'checkingRuntime')}</p>
-                {playbackMode === 'recovered' && <Button variant="primary" disabled={busy || dirty} icon={<IconPlayOutlineRegular size={14} />} onClick={() => { run(async () => { await props.preview(draft.id); actions.notice(t('playing')) }) }}>{t('runRecoveredPlayer')}</Button>}
-              </>}
-            {playbackMode === 'prototype' && <p className={css.stageHint}>{t('stageHint')}</p>}
+            <Player key={`${playbackIdentity}:${state.playbackRun}`} project={draft} scene={scene} line={state.line} urls={urls} dirty={dirty} navigate={position => { actions.scene(position.sceneId); actions.line(position.line) }} face={props} t={t} />
+            <p className={css.stageHint}>{t('stageHint')}</p>
             <div className={css.editorTabs} role="group" aria-label={t('scene')}>
               {(['production', 'dialogue', 'scene', 'assets'] as const).map(tab => <Button key={tab} size="sm" variant={state.tab === tab ? 'primary' : 'ghost'} aria-pressed={state.tab === tab} onClick={() => { actions.tab(tab) }}>{t(tab === 'dialogue' ? 'dialogue' : tab === 'scene' ? 'sceneTab' : tab === 'production' ? 'productionTab' : 'assetsTab')}</Button>)}
             </div>
@@ -225,7 +211,7 @@ export function StudioWorkbench(props: WorkbenchProps) {
         <Button size="sm" variant="ghost" disabled={busy || dirty} onClick={() => { run(async () => { adopt(await props.read(draft.id)) }) }}>{t('reloadProject')}</Button>
         <Button size="sm" variant="outline" disabled={busy || dirty || !loaded.canUndo} onClick={() => { run(async () => { adopt(await props.undo(draft.id, loaded.revision)) }) }}>{t('undoProject')}</Button>
         <Button size="sm" variant={dirty ? 'primary' : 'outline'} disabled={busy || !dirty || !valid} onClick={() => { run(async () => { adopt(await props.save(draft.id, loaded.revision, draft), true); actions.projects(await props.list()) }) }}>{t('saveProject')}</Button>
-        <Button size="sm" variant="primary" disabled={busy || dirty} icon={<IconPlayOutlineRegular size={14} />} onClick={() => { run(async () => { await props.preview(draft.id); actions.notice(t('playing')) }) }}>{t('runNative')}</Button>
+        <Button size="sm" variant="primary" disabled={busy || dirty} icon={<IconPlayOutlineRegular size={14} />} onClick={() => { actions.restartPlayback() }}>{t('restartPlayback')}</Button>
       </div>
     </footer>}
   </div>
