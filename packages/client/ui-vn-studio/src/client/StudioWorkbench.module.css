@@ -33,6 +33,13 @@
 .sceneMain { min-width: 0; padding: 18px; }
 .stage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--dsw-radius-sm); background: var(--dsw-alias-interactive-bg-hover-solid); container-type: inline-size; }
 .background { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.visualLayer { position: absolute; inset: 0; overflow: hidden; }
+.visualLayer[data-shot="medium"] .character { transform: scale(1.18); transform-origin: center 72%; }
+.visualLayer[data-shot="close"] .character { transform: scale(1.5); transform-origin: center 50%; }
+.visualLayer[data-transition="dissolve"] { animation: stageDissolve 280ms ease-out; }
+.character[data-dimmed="true"] { filter: brightness(.55) saturate(.75); }
+@keyframes stageDissolve { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .visualLayer[data-transition="dissolve"] { animation: none; } }
 .character { position: absolute; object-fit: fill; }
 .dialogueFrame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 .stage[data-skinned="true"] .dialogueBox { left: 20%; right: 10%; bottom: 2%; min-height: 21%; padding: 1.2% 3%; border: 0; background: transparent; color: var(--dsw-alias-toast-label); text-shadow: 0 1px 3px var(--dsw-alias-bg-mask-photo); }

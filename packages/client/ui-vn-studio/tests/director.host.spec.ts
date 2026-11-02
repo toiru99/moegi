@@ -1,4 +1,4 @@
-import { mkdtemp, rm, unlink } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -17,6 +17,7 @@ import { VnSkin } from '../src/ui-skin.ts'
 import * as Director from '../src/director-plugin.ts'
 import type { NovelProduction } from '../src/types.ts'
 import type { Config as StudioConfig } from '../src/config.ts'
+import type { MediaRequest } from '../src/media-providers.ts'
 
 class UnconfiguredCredentials extends CredentialProvider {
   async resolve() { return undefined }
@@ -62,11 +63,137 @@ async function setup(skills = true, directorConfig: Partial<Director.Config> = {
   } catch (error) { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true }); throw error }
 }
 
+it('persists model-authored beat staging and choice effects and forwards planned image references', async () => {
+  const fixture = await setup(false, { maxMediaJobs: 1 })
+  const { ctx } = fixture
+  try {
+    const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
+    const requests: MediaRequest[] = []
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true, ready: async () => true,
+      generate: async request => { requests.push(request); return png } })
+    await ctx.vnStudio.create('demo', 'Room', 'ko')
+    const imported = await ctx.vnMedia.assets.importResult('demo', 0, 'character', 'Sora reference', png)
+    const production = plan()
+    production.media = [{ id: 'sora_smile', name: 'Sora smiling', kind: 'character', sceneIds: ['start'], prompt: 'Same original librarian smiling', referenceAssetIds: [imported.assetId] }]
+    let saved = await ctx.vnDirector.plan('demo', imported.saved.revision, JSON.stringify(production))
+    const lines = [{ speaker: 'Sora', text: 'Will you help?', visual: { characters: [{ asset: imported.assetId, x: 50, y: 100, scale: 0.85 }], shot: 'close', focus: 0, transition: 'dissolve' } }]
+    const choices = [{ text: 'Stay and help', target: 'start', when: { helped: false }, effects: { helped: true } }]
+    const result = await executeToolFixture(ctx, { callId: ToolCallId('write-directed-scene'), name: 'vn_director', arguments: {
+      action: 'write_scene', id: 'demo', revision: saved.revision, sceneJson: JSON.stringify({ id: 'start', lines, choices }),
+    }, signal: new AbortController().signal })
+    expect(result.isError).toBe(false)
+    saved = await ctx.vnDirector.read('demo')
+    expect(saved.project.scenes[0]).toMatchObject({ lines, choices })
+    const referencePath = await ctx.vnMedia.assets.path('demo', imported.assetId)
+    const prepared = await ctx.vnDirector.prepareMedia('demo', saved.revision)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ kind: 'character', prompt: 'Same original librarian smiling', references: [referencePath] })
+    expect(await readFile(referencePath)).toEqual(await ctx.vnMedia.assets.bytes('demo', imported.assetId))
+    expect(prepared.saved.project.production?.media[0]).toMatchObject({ referenceAssetIds: [imported.assetId], assetId: expect.stringMatching(/^asset_/) })
+    expect(prepared.saved.project.scenes[0]?.lines).toEqual(lines)
+  } finally { await fixture.dispose() }
+})
+
+it.each(['audio', 'nonproject', 'four-references', 'stale-revision'])('rejects %s image references before invoking a provider or changing the project', async failure => {
+  const fixture = await setup(false)
+  const { ctx } = fixture
+  let calls = 0
+  try {
+    const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
+    const foreignPng = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#884466' } }).png().toBuffer()
+    ctx.vnMedia.providers.register({ id: 'reference-fixture', kinds: ['character'], supportsReferences: true, ready: async () => true,
+      generate: async () => { calls++; return png } })
+    await ctx.vnStudio.create('demo', 'Room', 'ko')
+    const image = await ctx.vnMedia.assets.importResult('demo', 0, 'character', 'Sora', png)
+    const audio = await ctx.vnMedia.effectAssetWithSignal('demo', image.saved.revision, 'Bell', 'bell')
+    await ctx.vnStudio.create('other', 'Other room', 'ko')
+    const foreign = await ctx.vnMedia.assets.importResult('other', 0, 'character', 'Other character', foreignPng)
+    const before = await ctx.vnStudio.read('demo')
+    const references = failure === 'audio' ? [audio.assetId] : failure === 'nonproject' ? [foreign.assetId]
+      : failure === 'four-references' ? Array.from({ length: 4 }, () => image.assetId) : [image.assetId]
+    const revision = failure === 'stale-revision' ? before.revision - 1 : before.revision
+    await expect(ctx.vnMedia.generateImageAssetWithSignal('demo', revision, 'character', 'Variant', 'A consistent smile', 'reference-fixture', undefined, references))
+      .rejects.toThrow(failure === 'stale-revision' ? /revision conflict/i : /image reference|image asset/i)
+    expect(calls).toBe(0)
+    expect(await ctx.vnStudio.read('demo')).toEqual(before)
+  } finally { await fixture.dispose() }
+})
+
+it('forwards cancellation with admitted image references and never imports late provider output', async () => {
+  const fixture = await setup(false)
+  const { ctx } = fixture
+  const entered = Promise.withResolvers<MediaRequest>(), finished = Promise.withResolvers<Buffer>()
+  try {
+    const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
+    ctx.vnMedia.providers.register({ id: 'slow-reference-fixture', kinds: ['character'], supportsReferences: true, ready: async () => true,
+      generate: async request => { entered.resolve(request); return finished.promise } })
+    await ctx.vnStudio.create('demo', 'Room', 'ko')
+    const imported = await ctx.vnMedia.assets.importResult('demo', 0, 'character', 'Sora', png)
+    const controller = new AbortController()
+    const pending = ctx.vnMedia.generateImageAssetWithSignal('demo', imported.saved.revision, 'character', 'Variant', 'A consistent smile', 'slow-reference-fixture', controller.signal, [imported.assetId])
+    const request = await entered.promise
+    expect(request.references).toEqual([await ctx.vnMedia.assets.path('demo', imported.assetId)])
+    controller.abort()
+    expect(request.signal.aborted).toBe(true)
+    finished.resolve(png)
+    await expect(pending).rejects.toThrow(/abort/i)
+    expect(await ctx.vnStudio.read('demo')).toEqual(imported.saved)
+  } finally { finished.resolve(Buffer.from('late provider output')); await fixture.dispose() }
+})
+
+it('keeps a generated expression unassigned until a beat deliberately replaces the base portrait', async () => {
+  const fixture = await setup(false, { maxMediaJobs: 1 })
+  const { ctx } = fixture
+  try {
+    const basePng = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
+    const smilePng = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#886644' } }).png().toBuffer()
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['character'], supportsReferences: true, ready: async () => true, generate: async () => smilePng })
+    await ctx.vnStudio.create('demo', 'Room', 'ko')
+    const imported = await ctx.vnMedia.assets.importResult('demo', 0, 'character', 'Sora', basePng)
+    const baseVisual = { characters: [{ asset: imported.assetId, x: 50, y: 100, scale: 0.85 }] }
+    let saved = await ctx.vnStudio.documents.save('demo', imported.saved.revision, { ...imported.saved.project,
+      scenes: [{ ...imported.saved.project.scenes[0]!, visual: baseVisual, lines: [{ speaker: 'Sora', text: 'Hello.' }] }] }, 'manual')
+    const production = plan()
+    production.media = [{ id: 'sora_smile', name: 'Sora smiling', kind: 'character', sceneIds: ['start'], prompt: 'Same librarian smiling', referenceAssetIds: [imported.assetId] }]
+    saved = await ctx.vnDirector.plan('demo', saved.revision, JSON.stringify(production))
+    const prepared = await ctx.vnDirector.prepareMedia('demo', saved.revision)
+    expect(prepared.saved.project.scenes[0]?.visual).toEqual(baseVisual)
+    expect(prepared.status.media[0]?.state).toBe('unassigned')
+    const variantId = prepared.saved.project.production!.media[0]!.assetId!
+    expect(variantId).not.toBe(imported.assetId)
+    saved = await ctx.vnDirector.writeScene('demo', prepared.saved.revision, JSON.stringify({ id: 'start',
+      lines: [{ speaker: 'Sora', text: 'Thank you.', visual: { characters: [{ ...baseVisual.characters[0], asset: variantId }], shot: 'close', focus: 0 } }] }))
+    expect(saved.project.scenes[0]?.visual).toEqual(baseVisual)
+    expect((await ctx.vnDirector.status('demo')).media[0]?.state).toBe('ready')
+  } finally { await fixture.dispose() }
+})
+
+it('leaves referenced artwork blocked with an adapter-only provider while continuing executable local audio', async () => {
+  const fixture = await setup(false, { maxMediaJobs: 1 })
+  const { ctx } = fixture
+  let unsupportedCalls = 0
+  try {
+    const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
+    ctx.vnMedia.providers.register({ id: 'adapter-only', kinds: ['character'], ready: async () => true,
+      generate: async () => { unsupportedCalls++; throw new Error('This adapter cannot use image references.') } })
+    await ctx.vnStudio.create('demo', 'Room', 'ko')
+    const imported = await ctx.vnMedia.assets.importResult('demo', 0, 'character', 'Sora', png)
+    const production = plan()
+    production.media = [{ id: 'sora_smile', name: 'Sora smiling', kind: 'character', sceneIds: ['start'], prompt: 'Same librarian smiling', referenceAssetIds: [imported.assetId] }, production.media[2]!]
+    const saved = await ctx.vnDirector.plan('demo', imported.saved.revision, JSON.stringify(production))
+    const prepared = await ctx.vnDirector.prepareMedia('demo', saved.revision)
+    expect(unsupportedCalls).toBe(0)
+    expect(prepared.status.media.map(task => [task.id, task.state])).toEqual([['sora_smile', 'blocked'], ['theme', 'ready']])
+    expect(prepared.status.warnings.find(warning => warning.mediaId === 'sora_smile')?.message).toMatch(/참조|reference/)
+    expect(prepared.saved.project.assets?.filter(asset => asset.kind === 'music')).toHaveLength(1)
+  } finally { await fixture.dispose() }
+})
+
 it('starts authoring and image providers without any legacy engine directories', async () => {
   const fixture = await setup(false, {}, { codexImageEnabled: true, codexExecutable: join(tmpdir(), 'vn-no-codex-installed-fixture.exe') })
   try {
     expect(await fixture.ctx.vnMedia.providers.status()).toEqual([
-      { id: 'codex-images', kinds: ['background', 'character'], ready: false },
+      { id: 'codex-images', kinds: ['background', 'character'], ready: false, supportsReferences: true },
       { id: 'openai-images', kinds: ['background', 'character'], ready: false },
     ])
     await fixture.ctx.vnStudio.create('demo', 'Browser story', 'ko')
@@ -81,6 +208,9 @@ it('automatically contributes its real packaged skill and tool, and removes them
     const skill = await ctx.skills.get('vn-director')
     expect(skill).toMatchObject({ name: 'vn-director', source: 'bundled', invocation: { modelInvocable: true, userInvocable: true } })
     expect(skill?.content).toContain('vn_director')
+    if (skill?.resourceBase?.kind !== 'directory') throw new Error('The director skill must expose its packaged resource directory.')
+    const direction = await readFile(join(skill.resourceBase.path, 'references/direction.md'))
+    expect(direction.byteLength).toBeGreaterThan(0)
     expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain(skill!.content)
     expect(ctx.tools.get('vn_director')).toBeDefined()
     await fiber.dispose()
@@ -143,7 +273,7 @@ it('automatically prepares project-owned UI art for browser playback within the 
   const { ctx } = fixture
   try {
     const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: { r: 40, g: 80, b: 100, alpha: 0.5 } } }).png().toBuffer()
-    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], ready: async () => true, generate: async () => png })
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true, ready: async () => true, generate: async () => png })
     await ctx.vnStudio.create('demo', 'Room', 'ko')
     const production = plan()
     let saved = await ctx.vnDirector.plan('demo', 0, JSON.stringify(production))
@@ -172,7 +302,7 @@ it('prefers the ready Codex image provider when another provider was registered 
     const apiImage = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#aa4444' } }).png().toBuffer()
     const codexImage = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#44aa44' } }).png().toBuffer()
     ctx.vnMedia.providers.register({ id: 'fixture-api-images', kinds: ['background', 'character'], ready: async () => true, generate: async () => apiImage })
-    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], ready: async () => true, generate: async () => codexImage })
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true, ready: async () => true, generate: async () => codexImage })
     await ctx.vnStudio.create('demo', 'Room', 'ko')
     const saved = await ctx.vnDirector.plan('demo', 0, JSON.stringify(plan()))
     const result = await ctx.vnDirector.prepareMedia('demo', saved.revision)
@@ -209,7 +339,7 @@ it('uses a ready image provider and binds admitted images with real audio into t
   const { ctx } = fixture
   try {
     const png = await sharp({ create: { width: 32, height: 32, channels: 4, background: '#446688' } }).png().toBuffer()
-    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], ready: async () => true, generate: async () => png })
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true, ready: async () => true, generate: async () => png })
     await ctx.vnStudio.create('demo', 'Room', 'ko')
     let saved = await ctx.vnDirector.plan('demo', 0, JSON.stringify(plan()))
     saved = await ctx.vnDirector.writeScene('demo', saved.revision, JSON.stringify({ id: 'start', lines: Array.from({ length: 12 }, (_, n) => ({ speaker: '', text: `A concrete action and reply ${n}` })) }))
@@ -249,7 +379,7 @@ it('forwards model cancellation while preparing browser interface artwork withou
   const { ctx } = fixture
   const entered = Promise.withResolvers<void>(), finished = Promise.withResolvers<Buffer>()
   try {
-    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], ready: async () => true,
+    ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true, ready: async () => true,
       generate: async () => { entered.resolve(); return finished.promise } })
     await ctx.vnStudio.create('demo', 'Room', 'ko')
     const production = plan(); production.media = []

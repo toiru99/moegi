@@ -53,6 +53,7 @@ export class VnMedia extends TypertRemoteService {
         preset: { type: 'string', enum: ['bell', 'rain', 'steps'] },
         prompt: { type: 'string', description: 'Image prompt, including desired style; at most 4000 characters.' },
         provider: { type: 'string', description: 'Ready provider id returned by status; defaults to signed-in codex-images, then another ready provider.' },
+        referenceAssetIds: { type: 'array', items: { type: 'string' }, description: 'At most 3 existing project image asset ids for consistent expressions, poses or event CGs. Generate the base portrait first; use its returned asset id.' },
       },
       output: { schema: { type: 'string' }, render: (_args, result) => [{ type: 'text', text: result }] },
       execute: async (args, execution) => {
@@ -73,7 +74,7 @@ export class VnMedia extends TypertRemoteService {
           const providers = await this.providers.status()
           const provider = args.provider ?? providers.find(provider => provider.id === 'codex-images' && provider.ready)?.id ?? providers.find(provider => provider.ready && provider.kinds.includes(args.kind!))?.id
           if (provider === undefined) throw new Error('Connect signed-in Codex image generation or an Images API provider before generating.')
-          return JSON.stringify(await this.generateImageWithSignal(args.id, args.revision, args.kind, args.name, args.prompt, provider, execution.signal))
+          return JSON.stringify(await this.generateImageWithSignal(args.id, args.revision, args.kind, args.name, args.prompt, provider, execution.signal, args.referenceAssetIds))
         }
         if (args.path === undefined || args.kind === undefined) throw new Error('A source file and media kind are required.')
         const info = await stat(args.path)
@@ -174,13 +175,13 @@ export class VnMedia extends TypertRemoteService {
 
   /** Generate through an installed provider, then validate and import its bytes. */
   @Remote
-  async generateImage(id: string, revision: number, kind: 'background' | 'character', name: string, prompt: string, provider: string): Promise<ProjectRevision> {
-    return this.generateImageWithSignal(id, revision, kind, name, prompt, provider)
+  async generateImage(id: string, revision: number, kind: 'background' | 'character', name: string, prompt: string, provider: string, referenceAssetIds?: string[]): Promise<ProjectRevision> {
+    return this.generateImageWithSignal(id, revision, kind, name, prompt, provider, undefined, referenceAssetIds)
   }
 
   /** Generate for a calling plugin with cancellation forwarded through validation and persistence. */
-  async generateImageWithSignal(id: string, revision: number, kind: 'background' | 'character', name: string, prompt: string, provider: string, caller?: AbortSignal): Promise<ProjectRevision> {
-    return (await this.generateImageAssetWithSignal(id, revision, kind, name, prompt, provider, caller)).saved
+  async generateImageWithSignal(id: string, revision: number, kind: 'background' | 'character', name: string, prompt: string, provider: string, caller?: AbortSignal, referenceAssetIds?: string[]): Promise<ProjectRevision> {
+    return (await this.generateImageAssetWithSignal(id, revision, kind, name, prompt, provider, caller, referenceAssetIds)).saved
   }
 
   /** Generate through the current provider and retain the exact id after raster normalization.
@@ -191,13 +192,25 @@ export class VnMedia extends TypertRemoteService {
    * @param prompt - Bounded original image prompt.
    * @param provider - Ready registered provider id.
    * @param caller - Optional calling operation cancellation; absence uses service lifetime.
+   * @param referenceAssetIds - Up to three admitted project images used for identity consistency.
    * @returns The authoring revision and exact validated project-owned image id.
    */
-  async generateImageAssetWithSignal(id: string, revision: number, kind: 'background' | 'character', name: string, prompt: string, provider: string, caller?: AbortSignal): Promise<MediaImportResult> {
+  async generateImageAssetWithSignal(id: string, revision: number, kind: 'background' | 'character', name: string, prompt: string, provider: string, caller?: AbortSignal, referenceAssetIds?: string[]): Promise<MediaImportResult> {
     const signal = caller === undefined ? this.stopped.signal : AbortSignal.any([this.stopped.signal, caller])
     signal.throwIfAborted()
     const operation = (async () => {
-      const bytes = await this.providers.generate(provider, { kind, prompt, signal })
+      const current = await this.ctx.vnStudio.documents.read(id)
+      if (current.revision !== revision) throw new Error('Revision conflict. Reload before generating media.')
+      if (referenceAssetIds !== undefined && (!Array.isArray(referenceAssetIds) || referenceAssetIds.length > 3 || referenceAssetIds.some(value => typeof value !== 'string'))) throw new Error('Expected at most 3 project image reference ids.')
+      const references: string[] = []
+      for (const reference of referenceAssetIds ?? []) {
+        const asset = current.project.assets?.find(asset => asset.id === reference)
+        if (!asset || (asset.kind !== 'character' && asset.kind !== 'background')) throw new Error('Image reference must be an existing project image asset.')
+        await this.assets.bytes(id, reference)
+        references.push(await this.assets.path(id, reference))
+      }
+      signal.throwIfAborted()
+      const bytes = await this.providers.generate(provider, { kind, prompt, signal, ...references.length ? { references } : {} })
       signal.throwIfAborted()
       return this.assets.importResult(id, revision, kind, name, bytes, { origin: 'generated', provider, prompt }, signal)
     })()

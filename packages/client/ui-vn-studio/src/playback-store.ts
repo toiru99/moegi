@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { assertId } from './store.ts'
 import type { SceneStore } from './store.ts'
 import type { NovelProject } from './types.ts'
-import { DEFAULT_PLAYER_SETTINGS, MAX_PLAYBACK_HISTORY } from './playback-types.ts'
+import { DEFAULT_PLAYER_SETTINGS, MAX_PLAYBACK_FLAGS, MAX_PLAYBACK_HISTORY } from './playback-types.ts'
 import type { GameSave, PlaybackPosition, PlaybackState, PlayerSettings } from './playback-types.ts'
 
 interface SavedPlayback { version: 1; id: string; slots: GameSave[]; settings: PlayerSettings }
@@ -18,8 +18,8 @@ export class PlaybackError extends Error {
   }
 }
 
-const MAX_INPUT_BYTES = 64 * 1024
-const MAX_FILE_BYTES = 256 * 1024
+const MAX_INPUT_BYTES = 1024 * 1024
+const MAX_FILE_BYTES = 8 * 1024 * 1024
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new PlaybackError('invalid-input', 'Expected a playback object.')
@@ -46,6 +46,13 @@ function state(value: unknown): PlaybackState {
   const row = record(value)
   if (!Array.isArray(row.history) || row.history.length > MAX_PLAYBACK_HISTORY) throw new PlaybackError('invalid-input', 'Playback history exceeds 200 visited positions.')
   const result: PlaybackState = { ...position(row), history: row.history.map(position) }
+  if (row.flags !== undefined) {
+    const entries = Object.entries(record(row.flags))
+    if (entries.length > MAX_PLAYBACK_FLAGS || entries.some(([key, value]) => !/^[a-z][a-z0-9_-]{0,63}$/.test(key) || typeof value !== 'boolean')) {
+      throw new PlaybackError('invalid-input', 'Playback flags require at most 8192 boolean identifier keys.')
+    }
+    result.flags = Object.fromEntries(entries) as Record<string, boolean>
+  }
   if (row.fingerprint !== undefined) {
     if (typeof row.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(row.fingerprint)) throw new PlaybackError('invalid-input', 'Invalid story fingerprint.')
     result.fingerprint = row.fingerprint
@@ -76,7 +83,7 @@ function savedSlot(value: unknown): GameSave {
     throw new PlaybackError('corrupt-save', 'Invalid saved playback slot.')
   }
   return { slot: slotNumber(row.slot), time: row.time, fingerprint: parsed.fingerprint, sceneId: parsed.sceneId,
-    line: parsed.line, history: parsed.history, title: row.title, text: row.text }
+    line: parsed.line, history: parsed.history, ...(parsed.flags === undefined ? {} : { flags: parsed.flags }), title: row.title, text: row.text }
 }
 
 function savedFile(value: unknown, id: string): SavedPlayback {
@@ -197,7 +204,7 @@ export class PlaybackStore {
       const saved = await this.read(directory, id), scene = project.scenes.find(scene => scene.id === parsed.sceneId)
       if (scene === undefined) throw new PlaybackError('invalid-input', 'The saved scene does not exist in this story.')
       const next: GameSave = { slot, time: new Date().toISOString(), fingerprint, sceneId: parsed.sceneId, line: parsed.line,
-        history: parsed.history, title: scene.title, text: scene.lines[parsed.line]?.text ?? '' }
+        history: parsed.history, ...(parsed.flags === undefined ? {} : { flags: parsed.flags }), title: scene.title, text: scene.lines[parsed.line]?.text ?? '' }
       saved.slots = [...saved.slots.filter(item => item.slot !== slot), next].sort((a, b) => a.slot - b.slot)
       await this.persist(directory, saved, cancellation)
       return saved.slots

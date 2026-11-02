@@ -19,6 +19,7 @@ const productionMessages = {
     unassignedMedia: '실제 자산은 있지만 필요한 모든 장면에 지정되지 않았습니다.',
     imagePending: '이미지 작업이 남아 있습니다. 생성하거나 파일을 가져와 필요한 장면에 지정하세요.',
     imageBlocked: '이미지 작업이 대기 중입니다. 이미지 연결 화면에서 공급자를 연결하거나 파일을 가져와 필요한 장면에 지정하세요.',
+    imageReferencesBlocked: '참조 이미지 작업에는 이미지 참조를 지원하는 준비된 공급자가 필요합니다. Codex 이미지 연결을 확인하거나 파일을 가져와 필요한 비트에 지정하세요.',
     audioPending: '음악·효과음 작업이 남아 있습니다. 원본 악보나 지원하는 효과음을 준비해 실제 파일을 만드세요.',
     missingFile: (id: string) => `장면에 지정된 자산 ${id}의 실제 파일을 확인할 수 없습니다.`,
   },
@@ -38,6 +39,7 @@ const productionMessages = {
     unassignedMedia: '実際の素材はありますが、必要なすべてのシーンに設定されていません。',
     imagePending: '画像の作業が残っています。生成またはファイルの読み込みを行い、必要なシーンに設定してください。',
     imageBlocked: '画像の作業は待機中です。画像接続画面でプロバイダーを接続するか、ファイルを読み込み、必要なシーンに設定してください。',
+    imageReferencesBlocked: '参照画像の作業には、画像参照に対応した準備済みプロバイダーが必要です。Codex画像の接続を確認するか、ファイルを読み込み必要なビートに設定してください。',
     audioPending: '音楽・効果音の作業が残っています。オリジナルの楽譜や対応する効果音を用意し、実際のファイルを作成してください。',
     missingFile: (id: string) => `シーンに設定された素材${id}の実際のファイルを確認できません。`,
   },
@@ -68,7 +70,9 @@ export async function saveProductionPlan(store: SceneStore, id: string, revision
   for (const scene of production.scenes) if (scene.id === 'vn_studio_title') throw new Error('Scene id is reserved for the native title menu.')
   production.media = production.media.map(task => {
     const previous = saved.project.production?.media.find(old => old.id === task.id && old.kind === task.kind)
-    return task.assetId === undefined && previous?.assetId !== undefined ? { ...task, assetId: previous.assetId } : task
+    return { ...task,
+      ...task.assetId === undefined && previous?.assetId !== undefined ? { assetId: previous.assetId } : {},
+      ...task.referenceAssetIds === undefined && previous?.referenceAssetIds !== undefined ? { referenceAssetIds: previous.referenceAssetIds } : {} }
   })
   const existing = new Set(saved.project.scenes.map(scene => scene.id))
   const placeholders = production.scenes.filter(scene => !existing.has(scene.id)).map(scene => ({ id: scene.id, title: scene.title, lines: [], choices: [] }))
@@ -103,13 +107,16 @@ export async function writeProductionScene(store: SceneStore, id: string, revisi
  * @returns Whether the scene uses the task's asset in its declared role.
  */
 export function sceneUsesMedia(scene: NovelScene | undefined, task: ProductionMedia): boolean {
-  if (scene?.visual === undefined || task.assetId === undefined) return false
-  switch (task.kind) {
-    case 'background': return scene.visual.background === task.assetId
-    case 'character': return scene.visual.characters.some(character => character.asset === task.assetId)
-    case 'music': return scene.visual.music === task.assetId
-    case 'sound': return scene.visual.sound === task.assetId
-  }
+  if (scene === undefined || task.assetId === undefined) return false
+  return [scene.visual, ...scene.lines.map(line => line.visual)].some(visual => {
+    if (visual === undefined) return false
+    switch (task.kind) {
+      case 'background': return visual.background === task.assetId || visual.cg === task.assetId
+      case 'character': return visual.characters.some(character => character.asset === task.assetId)
+      case 'music': return visual.music === task.assetId
+      case 'sound': return visual.sound === task.assetId
+    }
+  })
 }
 
 /** Compute inspectable progress from saved content, verified files and current providers.
@@ -158,23 +165,24 @@ export function deriveProductionStatus(saved: ProjectRevision, providers: MediaS
     const exists = asset !== undefined && availableAssets.has(asset.id)
     const assigned = exists && task.sceneIds.every(id => sceneUsesMedia(project.scenes.find(scene => scene.id === id), task))
     const canGenerate = task.kind === 'music' ? task.scoreJson !== undefined : task.kind === 'sound' ? task.preset !== undefined
-      : task.prompt !== undefined && providers.some(provider => provider.ready && provider.kinds.includes(task.kind))
+      : task.prompt !== undefined && providers.some(provider => provider.ready && provider.kinds.includes(task.kind)
+        && ((task.referenceAssetIds?.length ?? 0) === 0 || provider.supportsReferences === true))
     const state = assigned ? 'ready' : exists ? 'unassigned' : canGenerate ? 'pending' : 'blocked'
     if (state !== 'ready') warnings.push({ code: state === 'unassigned' ? 'unassigned-media' : 'missing-media', mediaId: task.id,
       message: exists ? copy.unassignedMedia : task.kind === 'background' || task.kind === 'character'
-        ? canGenerate ? copy.imagePending : copy.imageBlocked : copy.audioPending })
+        ? canGenerate ? copy.imagePending : (task.referenceAssetIds?.length ?? 0) > 0 ? copy.imageReferencesBlocked : copy.imageBlocked : copy.audioPending })
     return { id: task.id, name: task.name, kind: task.kind, sceneIds: task.sceneIds, ...task.assetId === undefined ? {} : { assetId: task.assetId }, state }
   })
   const used = new Set<string>()
-  for (const scene of project.scenes) if (scene.visual !== undefined) {
-    for (const id of [scene.visual.background, scene.visual.music, scene.visual.sound, ...scene.visual.characters.map(character => character.asset)]) if (id !== undefined) used.add(id)
+  for (const scene of project.scenes) for (const visual of [scene.visual, ...scene.lines.map(line => line.visual)]) if (visual !== undefined) {
+    for (const id of [visual.background, visual.cg, visual.music, visual.sound, ...visual.characters.map(character => character.asset)]) if (id !== undefined) used.add(id)
   }
   for (const id of used) if (!availableAssets.has(id)) warnings.push({ code: 'missing-asset-file', message: copy.missingFile(id) })
   const writtenScenes = scenes.filter(scene => scene.phase === 'written').length
   return { revision: saved.revision, planned: true, plannedScenes: scenes.length, writtenScenes, ready: writtenScenes === scenes.length && scenes.length >= minScenes && warnings.length === 0, scenes, media, warnings, providers }
 }
 
-/** Attach verified generated/reused media without replacing occupied visual roles.
+/** Attach verified generated/reused media without replacing occupied visual roles; referenced images require deliberate placement.
  * @param store - Authoritative project storage.
  * @param saved - Current revision after media import.
  * @param taskId - Durable media requirement id.
@@ -190,6 +198,7 @@ export async function bindProductionMedia(store: SceneStore, saved: ProjectRevis
   let changed = original.assetId !== asset.id
   const scenes = saved.project.scenes.map(scene => {
     if (!task.sceneIds.includes(scene.id)) return scene
+    if ((task.kind === 'character' || task.kind === 'background') && (task.referenceAssetIds?.length ?? 0) > 0) return scene
     const visual = { ...scene.visual, characters: scene.visual?.characters ?? [] }
     let assigned = false
     switch (task.kind) {

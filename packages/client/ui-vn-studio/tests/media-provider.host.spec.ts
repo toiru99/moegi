@@ -2,6 +2,12 @@ import { expect, it, vi } from 'vitest'
 import { MediaProviders, openAiImages } from '../src/media-providers.ts'
 
 const request = { kind: 'background' as const, prompt: '비 오는 서점', signal: new AbortController().signal }
+it('rejects reference edits explicitly before calling a generations-only provider', async () => {
+  const transport = vi.fn<typeof fetch>()
+  const provider = openAiImages({ readKey: async () => 'test-key', model: 'test-image', maxBytes: 1024, timeoutMs: 1000, transport })
+  await expect(provider.generate({ ...request, references: ['/validated/character.png'] })).rejects.toThrow(/reference.*Codex/i)
+  expect(transport).not.toHaveBeenCalled()
+})
 it('registers providers reversibly and reports unconfigured generation honestly', async () => {
   const providers = new MediaProviders()
   const transport = vi.fn<typeof fetch>()

@@ -5,6 +5,8 @@ export interface MediaRequest {
   kind: AssetKind
   prompt: string
   signal: AbortSignal
+  /** Validated project-owned images for consistent expressions, poses or event CGs. */
+  references?: string[]
   /** Interface composition supersedes scene framing; references are validated project-owned local image paths. */
   presentation?: { purpose: 'interface'; transparent: boolean; references?: string[] }
 }
@@ -12,6 +14,7 @@ export interface MediaRequest {
 export interface MediaProvider {
   id: string
   kinds: AssetKind[]
+  supportsReferences?: boolean
   ready(): Promise<boolean>
   generate(request: MediaRequest): Promise<Buffer>
 }
@@ -24,13 +27,14 @@ export class MediaProviders {
     this.entries.set(provider.id, provider)
     return () => { if (this.entries.get(provider.id) === provider) this.entries.delete(provider.id) }
   }
-  async status(): Promise<{ id: string; kinds: AssetKind[]; ready: boolean }[]> {
-    return Promise.all([...this.entries.values()].map(async provider => ({ id: provider.id, kinds: [...provider.kinds], ready: await provider.ready() })))
+  async status(): Promise<{ id: string; kinds: AssetKind[]; ready: boolean; supportsReferences?: boolean }[]> {
+    return Promise.all([...this.entries.values()].map(async provider => ({ id: provider.id, kinds: [...provider.kinds], ready: await provider.ready(), ...provider.supportsReferences === undefined ? {} : { supportsReferences: provider.supportsReferences } })))
   }
   async generate(id: string, request: MediaRequest): Promise<Buffer> {
     request.signal.throwIfAborted()
     const provider = this.entries.get(id)
     if (provider === undefined || !provider.kinds.includes(request.kind)) throw new Error('Media provider does not support this asset kind.')
+    if ((request.references?.length || request.presentation?.references?.length) && provider.supportsReferences !== true) throw new Error('The selected provider does not support image references. Use ready Codex images or another reference-capable provider.')
     if (!await provider.ready()) throw new Error('The selected image provider is not ready. Check its Codex sign-in or optional Images API connection.')
     request.signal.throwIfAborted()
     const bytes = await provider.generate(request)
@@ -66,6 +70,7 @@ export function openAiImages(options: ImageOptions): MediaProvider {
     ready: async () => Boolean(await options.readKey()),
     async generate(request) {
       request.signal.throwIfAborted()
+      if (request.references?.length || request.presentation?.references?.length) throw new Error('Reference image edits require the Codex image provider; this Images API adapter supports new generations only.')
       const key = await options.readKey()
       if (!key) throw new Error('Connect the image provider API key before generating.')
       if (request.prompt.trim() === '' || request.prompt.length > 4000) throw new Error('Expected an image prompt of 1–4000 characters.')

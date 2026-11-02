@@ -186,3 +186,72 @@ it('disables title Start until a delayed game load settles', async () => {
   fireEvent.click(screen.getByRole('button', { name: en.gameStart }))
   expect(navigate).toHaveBeenLastCalledWith({ sceneId: 'start', line: 0 })
 })
+
+it('carries choice flags into saves and loads and resets them on title Start', async () => {
+  const { face } = fixture(); cleanup()
+  const story = structuredClone(project)
+  story.scenes[0]!.choices = [{ text: 'Trust', target: 'next', effects: { trusted: true } }]
+  story.scenes[1]!.choices = [
+    { text: 'Trusted reply', target: 'start', when: { trusted: true } },
+    { text: 'Unknown reply', target: 'start', when: { trusted: false } },
+  ]
+  const before = structuredClone(story), saveGame = vi.fn<PlayerActions['saveGame']>(async () => [])
+  const loadGame = vi.fn<PlayerActions['loadGame']>(async () => ({ slot: 0, time: new Date().toISOString(), fingerprint: await playbackFingerprint(story), sceneId: 'next', line: 1, flags: { trusted: true }, history: [], title: '', text: '' }))
+  function Harness() {
+    const [position, navigate] = useState({ sceneId: 'start', line: 0 })
+    return <Player project={story} scene={story.scenes.find(scene => scene.id === position.sceneId)!} line={position.line} urls={{}} dirty={false} navigate={navigate} face={{ ...face, saveGame, loadGame }} t={t} />
+  }
+  render(<Harness />)
+  fireEvent.click(screen.getByRole('button', { name: en.nextLine }))
+  fireEvent.click(screen.getByRole('button', { name: 'Trust' }))
+  fireEvent.click(screen.getByRole('button', { name: en.nextLine }))
+  expect(screen.getByRole('button', { name: 'Trusted reply' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Unknown reply' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: en.quickSave }))
+  await waitFor(() => expect(saveGame).toHaveBeenCalledOnce())
+  expect(JSON.parse(saveGame.mock.calls[0]![2]).flags).toEqual({ trusted: true })
+  await waitFor(() => expect(screen.getByRole('button', { name: en.quickLoad }).hasAttribute('disabled')).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: en.gameTitle }))
+  fireEvent.click(screen.getByRole('button', { name: en.gameStart }))
+  fireEvent.click(screen.getByRole('button', { name: en.quickSave }))
+  await waitFor(() => expect(saveGame).toHaveBeenCalledTimes(2))
+  expect(JSON.parse(saveGame.mock.calls[1]![2]).flags).toEqual({})
+  await waitFor(() => expect(screen.getByRole('button', { name: en.quickLoad }).hasAttribute('disabled')).toBe(false))
+  fireEvent.click(screen.getByRole('button', { name: en.quickLoad }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Trusted reply' })).toBeTruthy())
+  expect(story).toEqual(before)
+})
+
+it('plays SFX once per authored cue and cancels stale asset loads during skipping', async () => {
+  const { face } = fixture(); cleanup()
+  const audios: HTMLAudioElement[] = []
+  vi.stubGlobal('Audio', function () {
+    const audio = document.createElement('audio')
+    vi.spyOn(audio, 'play').mockResolvedValue(); vi.spyOn(audio, 'pause').mockImplementation(() => {}); vi.spyOn(audio, 'load').mockImplementation(() => {})
+    audios.push(audio); return audio
+  })
+  const pending: Array<ReturnType<typeof Promise.withResolvers<string>>> = []
+  const assetData = vi.fn<PlayerActions['assetData']>(() => { const deferred = Promise.withResolvers<string>(); pending.push(deferred); return deferred.promise })
+  const story = structuredClone(project)
+  story.scenes[0]!.lines = [
+    { speaker: '', text: 'One', visual: { characters: [], sound: 'chime' } },
+    { speaker: '', text: 'Two' },
+    { speaker: '', text: 'Three', visual: { characters: [], sound: 'chime' } },
+  ]
+  function Harness() {
+    const [line, setLine] = useState(0)
+    return <Player project={story} scene={story.scenes[0]!} line={line} urls={{}} dirty={false} navigate={position => { setLine(position.line) }} face={{ ...face, assetData }} t={t} />
+  }
+  render(<Harness />)
+  fireEvent.click(screen.getByRole('button', { name: en.soundOn }))
+  await waitFor(() => expect(assetData).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByRole('button', { name: en.nextLine }))
+  expect(assetData).toHaveBeenCalledTimes(1)
+  fireEvent.click(screen.getByRole('button', { name: en.nextLine }))
+  await waitFor(() => expect(assetData).toHaveBeenCalledTimes(2))
+  await act(async () => { pending[0]!.resolve('/old.wav'); pending[1]!.resolve('/new.wav') })
+  expect(audios[0]!.play).not.toHaveBeenCalled()
+  expect(audios[1]!.play).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: en.nextLine }))
+  expect(assetData).toHaveBeenCalledTimes(2)
+})

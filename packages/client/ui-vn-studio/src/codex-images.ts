@@ -218,11 +218,11 @@ async function generateImage(connection: Connection, request: MediaRequest, opti
       ? `Original game interface artwork. Follow the authored dimensions, layout, subjects and typography exactly. ${request.presentation.transparent ? 'Use a transparent background with real alpha, not a checkerboard or painted transparency.' : 'Use an opaque full canvas.'} Attached local images are character identity references, not interface layouts.`
       : request.kind === 'character'
       ? 'A single full-body visual novel character sprite, entire head, hands and feet visible with margin, portrait composition, genuinely transparent background with real alpha; no backdrop, floor, cast shadow, text or watermark.'
-      : 'An original polished visual novel background, landscape 16:9 composition, lower quarter visually quiet for dialogue; no people, readable signs, logos or watermarks.'
+      : 'An original polished visual novel location or event CG, landscape 16:9 composition, lower quarter visually quiet for dialogue; include people and actions only when the authored description requests them; no readable signs, logos or watermarks.'
     const response = await connection.request('turn/start', { threadId, input: [
-      { type: 'text', text: `$imagegen Generate exactly one PNG image. ${framing}\nAuthored asset description:\n${request.prompt}\nThe calling host will copy the generated native image; do not run any file commands.`, text_elements: [] },
+      { type: 'text', text: `$imagegen Generate exactly one PNG image. ${framing}\nPreserve the identity, costume and art style of attached character references; apply the authored expression, pose or action.\nAuthored asset description:\n${request.prompt}\nThe calling host will copy the generated native image; do not run any file commands.`, text_elements: [] },
       { type: 'skill', name: 'imagegen', path: skill },
-      ...request.presentation?.references?.map(path => ({ type: 'localImage', path })) ?? [],
+      ...[...new Set([...request.references ?? [], ...request.presentation?.references ?? []])].map(path => ({ type: 'localImage', path })),
     ] }, signal)
     const responseTurn = object(response.turn)
     if (typeof responseTurn.id === 'string') turnId = responseTurn.id
@@ -289,7 +289,7 @@ export function codexImages(options: CodexImageOptions): MediaProvider & { dispo
     try { return await starting } catch (error) { starting = undefined; throw error }
   }
   return {
-    id: 'codex-images', kinds: ['background', 'character'],
+    id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true,
     async ready() {
       if (disposed) return false
       try {

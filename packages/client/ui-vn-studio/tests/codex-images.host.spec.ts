@@ -130,6 +130,16 @@ it('uses authored interface composition and attaches local references without ch
   expect(turn.input[0]?.text).not.toMatch(/full.body|no people|landscape 16:9/i)
 })
 
+it('attaches story references and allows authored people in event CG compositions', async () => {
+  const f = await fixture()
+  const reference = join(f.root, 'heroine.png'); await writeFile(reference, f.png)
+  await f.provider.generate({ ...request(), references: [reference], prompt: 'Event CG: the heroine catches a falling letter.' })
+  const turn = (await f.requests()).find(x => x.method === 'turn/start')?.params as { input: { type: string; path?: string; text?: string }[] }
+  expect(turn.input).toContainEqual({ type: 'localImage', path: reference })
+  expect(turn.input[0]?.text).toMatch(/identity/i)
+  expect(turn.input[0]?.text).not.toMatch(/no people/i)
+})
+
 it('requires real alpha for transparent interface assets regardless of their background storage kind', async () => {
   const f = await fixture()
   await writeFile(join(f.root, 'image.png'), await sharp({ create: { width: 4, height: 4, channels: 4, background: '#123456' } }).png().toBuffer())

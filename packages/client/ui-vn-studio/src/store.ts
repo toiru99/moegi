@@ -92,7 +92,31 @@ function parseVisual(value: unknown, assets: NovelAsset[]): SceneVisual {
   if (row.background !== undefined) visual.background = reference(row.background, 'background')
   if (row.music !== undefined) visual.music = reference(row.music, 'music')
   if (row.sound !== undefined) visual.sound = reference(row.sound, 'sound')
+  if (row.cg !== undefined) visual.cg = reference(row.cg, 'background')
+  if (row.shot !== undefined) {
+    if (row.shot !== 'wide' && row.shot !== 'medium' && row.shot !== 'close') throw new Error('Invalid visual shot.')
+    visual.shot = row.shot
+  }
+  if (row.transition !== undefined) {
+    if (row.transition !== 'cut' && row.transition !== 'dissolve') throw new Error('Invalid visual transition.')
+    visual.transition = row.transition
+  }
+  if (row.focus !== undefined) {
+    const focus = bounded(row.focus, 0, 2, 'visual focus')
+    if (!Number.isInteger(focus) || focus >= visual.characters.length) throw new Error('Visual focus must name an existing character slot.')
+    visual.focus = focus
+  }
   return visual
+}
+
+function booleanFlags(value: unknown): Record<string, boolean> {
+  const entries = Object.entries(object(value))
+  if (entries.length > 64) throw new Error('Expected at most 64 boolean flags.')
+  for (const [key, flag] of entries) {
+    assertId(key)
+    if (typeof flag !== 'boolean') throw new Error('Expected boolean flag values.')
+  }
+  return Object.fromEntries(entries) as Record<string, boolean>
 }
 
 function rows(value: unknown, max: number, label: string): unknown[] {
@@ -163,6 +187,7 @@ export function parseProduction(value: unknown, mode: 'plan' | 'durable'): Novel
       task.preset = row.preset
     }
     if (row.assetId !== undefined) task.assetId = identifier(row.assetId)
+    if (row.referenceAssetIds !== undefined) task.referenceAssetIds = rows(row.referenceAssetIds, 3, 'image references').map(identifier)
     return task
   })
   unique(cast.map(row => row.id), 'cast'); unique(scenes.map(row => row.id), 'planned scene'); unique(media.map(row => row.id), 'planned media')
@@ -190,13 +215,16 @@ export function parseProject(value: unknown): NovelProject {
       ...scene.visual === undefined ? {} : { visual: parseVisual(scene.visual, assets ?? []) },
       lines: scene.lines.map((line: unknown) => {
         const row = object(line)
-        return { speaker: text(row.speaker, 128, true), text: text(row.text, 8192) }
+        return { speaker: text(row.speaker, 128, true), text: text(row.text, 8192),
+          ...row.visual === undefined ? {} : { visual: parseVisual(row.visual, assets ?? []) } }
       }),
       choices: scene.choices.map((choice: unknown) => {
         const row = object(choice)
         const target = text(row.target, 64)
         assertId(target)
-        return { text: text(row.text, 256), target }
+        return { text: text(row.text, 256), target,
+          ...row.when === undefined ? {} : { when: booleanFlags(row.when) },
+          ...row.effects === undefined ? {} : { effects: booleanFlags(row.effects) } }
       }),
     }
   })
@@ -226,6 +254,10 @@ export function parseProject(value: unknown): NovelProject {
     const known = new Set([...ids, ...project.production.scenes.map(scene => scene.id)])
     for (const task of project.production.media) for (const sceneId of task.sceneIds) {
       if (!known.has(sceneId)) throw new Error(`Planned media scene reference does not exist: ${sceneId}`)
+    }
+    for (const task of project.production.media) for (const referenceId of task.referenceAssetIds ?? []) {
+      const asset = assets?.find(asset => asset.id === referenceId)
+      if (asset === undefined || (asset.kind !== 'background' && asset.kind !== 'character')) throw new Error('Planned image reference requires an existing image asset.')
     }
   }
   if (Buffer.byteLength(JSON.stringify(project), 'utf8') > MAX_BYTES / 4) throw new Error('Project exceeds the size limit.')

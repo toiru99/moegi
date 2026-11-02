@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { NovelProject, NovelScene } from '../types.ts'
+import { resolveSceneDirection } from '../direction.ts'
 import { DEFAULT_PLAYER_SETTINGS } from '../playback-types.ts'
 import type { GameSave, PlaybackPosition, PlayerSettings } from '../playback-types.ts'
 import type { PlayerActions } from './player-actions.ts'
 import { Stage } from './Stage.tsx'
-import { advancePlayback, playbackFingerprint, rememberPlayback } from './player-state.ts'
+import { advancePlayback, choosePlayback, playbackFingerprint, rememberPlayback } from './player-state.ts'
 import css from './Player.module.css'
 
 /** Independent browser gameplay changes play position and never authored content. */
@@ -15,6 +16,8 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
   navigate(position: PlaybackPosition): void; face: PlayerActions
 }) {
   const [history, setHistory] = useState<PlaybackPosition[]>([])
+  const [flags, setFlags] = useState<Record<string, boolean>>({})
+  const [audioRun, setAudioRun] = useState(0)
   const [settings, setSettings] = useState<PlayerSettings>(DEFAULT_PLAYER_SETTINGS)
   const [saves, setSaves] = useState<GameSave[]>([])
   const [menu, setMenu] = useState<'title' | 'save' | 'load' | 'history' | 'settings'>()
@@ -31,6 +34,7 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
   currentProject.current = project; currentDirty.current = dirty
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const position = { sceneId: scene.id, line }
+  const { visual, cueIndex } = resolveSceneDirection(scene, line)
   const run = async (operation: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
@@ -92,27 +96,27 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
   }, [project.id, project.uiSkin?.title, project.uiSkin?.dialogue, project.uiSkin?.cursor, face.assetData, t])
 
   useEffect(() => {
-    if (!sound || !unlocked || scene.visual?.music === undefined) return
+    if (!sound || !unlocked || visual?.music === undefined) return
     let live = true
     const audio = new Audio(); music.current = audio; audio.loop = true
-    void face.assetData(project.id, scene.visual.music).then(async url => {
+    void face.assetData(project.id, visual.music).then(async url => {
       if (!live) return
       audio.src = url; audio.volume = currentSettings.current.musicVolume
       await audio.play()
     }).catch(() => { if (live) { setUnlocked(false); setNotice(t('soundOn')) } })
     return () => { live = false; audio.pause(); audio.removeAttribute('src'); audio.load(); if (music.current === audio) music.current = null }
-  }, [project.id, scene.visual?.music, sound, unlocked, face.assetData, t])
+  }, [project.id, visual?.music, sound, unlocked, face.assetData, t])
   useEffect(() => {
-    if (!sound || !unlocked || scene.visual?.sound === undefined) return
+    if (!sound || !unlocked || visual?.sound === undefined) return
     let live = true
     const audio = new Audio(); effect.current = audio
-    void face.assetData(project.id, scene.visual.sound).then(async url => {
+    void face.assetData(project.id, visual.sound).then(async url => {
       if (!live) return
       audio.src = url; audio.volume = currentSettings.current.effectVolume
       await audio.play()
     }).catch(() => { if (live) setNotice(t('soundOn')) })
     return () => { live = false; audio.pause(); audio.removeAttribute('src'); audio.load(); if (effect.current === audio) effect.current = null }
-  }, [project.id, scene.id, scene.visual?.sound, sound, unlocked, face.assetData, t])
+  }, [project.id, scene.id, cueIndex, visual?.sound, audioRun, sound, unlocked, face.assetData, t])
   useEffect(() => { if (music.current) music.current.volume = settings.musicVolume; if (effect.current) effect.current.volume = settings.effectVolume }, [settings.musicVolume, settings.effectVolume])
 
   const advance = () => {
@@ -129,20 +133,25 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
   }, [mode, menu, project, scene.id, line, settings.autoDelayMs])
   const stop = () => { setMode(undefined) }
   const save = (slot: number) => { stop(); void run(async () => {
-    setSaves(await face.saveGame(project.id, slot, JSON.stringify({ ...position, history, fingerprint: await playbackFingerprint(project) }))); setNotice(t('gameSaved'))
+    setSaves(await face.saveGame(project.id, slot, JSON.stringify({ ...position, history, flags, fingerprint: await playbackFingerprint(project) }))); setNotice(t('gameSaved'))
   }) }
   const load = (slot: number) => { stop(); void run(async () => {
     const snapshot = project, expected = await playbackFingerprint(snapshot)
     const saved = await face.loadGame(project.id, slot)
     if (!mounted.current) return
     if (currentProject.current !== snapshot || currentDirty.current || saved.fingerprint !== expected) { setNotice(t('gameStale')); return }
-    setHistory(saved.history); navigate({ sceneId: saved.sceneId, line: saved.line }); setMenu(undefined); setUnlocked(true); setNotice(t('gameLoaded'))
+    setHistory(saved.history); setFlags(saved.flags ?? {}); navigate({ sceneId: saved.sceneId, line: saved.line }); setAudioRun(value => value + 1); setMenu(undefined); setUnlocked(true); setNotice(t('gameLoaded'))
   }) }
   const open = (next: typeof menu) => { stop(); setMenu(next); if (next === 'save' || next === 'load') void run(async () => { setSaves(await face.gameSaves(project.id)) }) }
   const close = () => { setMenu(undefined) }
   return <div className={css.player} data-custom-cursor={skin.cursor === undefined ? undefined : true} style={skin.cursor === undefined ? undefined : { cursor: `url("${skin.cursor}") 0 0, auto` }}>
-    <Stage project={project} scene={scene} line={line} urls={urls} dialogueFrame={skin.dialogue} next={advance} textScale={settings.textSize / 100} choose={sceneId => {
-      stop(); setUnlocked(true); setHistory(previous => rememberPlayback(previous, position)); navigate({ sceneId, line: 0 })
+    <Stage project={project} scene={scene} line={line} urls={urls} dialogueFrame={skin.dialogue} next={advance} textScale={settings.textSize / 100} flags={flags} choose={(sceneId, index) => {
+      if (index === undefined) return
+      let selected: ReturnType<typeof choosePlayback>
+      try { selected = choosePlayback(project, position, index, flags) }
+      catch (error) { if (error instanceof RangeError) { setNotice(t('gameFlagLimit')); return }; throw error }
+      if (selected === undefined || selected.position.sceneId !== sceneId) return
+      stop(); setUnlocked(true); setFlags(selected.flags); setHistory(previous => rememberPlayback(previous, position)); navigate(selected.position)
     }} t={t} />
     <div className={css.controls} role="group" aria-label={t('gameControls')}>
       <Button size="sm" variant="ghost" onClick={() => { open('title') }}>{t('gameTitle')}</Button>
@@ -159,7 +168,7 @@ export function Player({ project, scene, line, urls, dirty, navigate, face, t }:
     {dirty && <p className={css.hint}>{t('saveDraftFirst')}</p>}
     {notice !== '' && <p className={css.hint} role="status">{notice}</p>}
     <Modal open={menu !== undefined} onClose={close} title={menu === 'title' ? project.title : t(menu === 'save' ? 'saveSlots' : menu === 'load' ? 'loadSlots' : menu === 'history' ? 'backlog' : 'gameSettings')} closeLabel={t('closeGameMenu')} className={css.modal!} contentClassName={css.modalContent!}>
-      {menu === 'title' && <div className={css.titleCard}>{skin.title && <img className={css.titleArtwork} src={skin.title} alt={t('titleArtwork')} />}<h3>{project.title}</h3><Button variant="primary" disabled={dirty || busy} data-modal-autofocus onClick={() => { setHistory([]); navigate({ sceneId: project.entry, line: 0 }); close(); setUnlocked(true) }}>{t('gameStart')}</Button></div>}
+      {menu === 'title' && <div className={css.titleCard}>{skin.title && <img className={css.titleArtwork} src={skin.title} alt={t('titleArtwork')} />}<h3>{project.title}</h3><Button variant="primary" disabled={dirty || busy} data-modal-autofocus onClick={() => { setHistory([]); setFlags({}); setAudioRun(value => value + 1); navigate({ sceneId: project.entry, line: 0 }); close(); setUnlocked(true) }}>{t('gameStart')}</Button></div>}
       {(menu === 'save' || menu === 'load') && <div className={css.slots}>
         <p className={css.hint}>{t('gameSaveHint')}</p>
         {Array.from({ length: 6 }, (_, index) => index + 1).map(slot => {

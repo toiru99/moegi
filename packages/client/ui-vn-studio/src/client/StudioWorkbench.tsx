@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Button, IconPlayOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { NovelAsset, NovelProject, NovelScene, ProjectRevision } from '../types.ts'
+import { resolveSceneDirection } from '../direction.ts'
 import type { CreatorActions } from './creator-actions.ts'
 import type { StudioBinding } from './studio-store.ts'
 import { Player } from './Player.tsx'
@@ -33,7 +34,8 @@ export function StudioWorkbench(props: WorkbenchProps) {
   const setTitle = (title: string) => { actions.welcome({ title }) }
   const setIdea = (idea: string) => { actions.welcome({ idea }) }
   const setLanguage = (language: 'ko' | 'ja') => { actions.welcome({ language }) }
-  const [urls, setUrls] = useState<Record<string, string>>({})
+  const [artwork, setArtwork] = useState<{ id: string; urls: Record<string, string>; active: string[] }>({ id: '', urls: {}, active: [] })
+  const urls = artwork.id === draft?.id ? artwork.urls : {}
   const [assistantArtwork, setAssistantArtwork] = useState('')
   const scene = draft?.scenes.find(scene => scene.id === state.sceneId) ?? draft?.scenes[0]
 
@@ -90,7 +92,8 @@ export function StudioWorkbench(props: WorkbenchProps) {
     return () => { live = false; clearInterval(timer) }
   }, [loaded?.project.id, props.head, props.read, actions])
 
-  const background = scene?.visual?.background
+  const visual = scene === undefined ? undefined : resolveSceneDirection(scene, state.line).visual
+  const background = visual?.cg ?? visual?.background
   const titleAsset = draft?.uiSkin?.title
   useEffect(() => {
     let live = true
@@ -100,13 +103,17 @@ export function StudioWorkbench(props: WorkbenchProps) {
       .catch((error: unknown) => { if (live) actions.notice(error instanceof Error ? error.message : String(error)) })
     return () => { live = false }
   }, [draft?.id, titleAsset, props.assetData, actions])
-  const characterIds = scene?.visual?.characters.map(character => character.asset).join(',') ?? ''
+  const characterIds = visual?.cg === undefined ? visual?.characters.map(character => character.asset).join(',') ?? '' : ''
   useEffect(() => {
     let live = true
-    setUrls({})
     if (draft !== undefined) {
       const ids = [...new Set([background, ...characterIds.split(',')].filter((id): id is string => Boolean(id)))]
-      void Promise.all(ids.map(async id => [id, await props.assetData(draft.id, id)] as const)).then(entries => { if (live) setUrls(Object.fromEntries(entries)) })
+      void Promise.all(ids.map(async id => [id, await props.assetData(draft.id, id)] as const)).then(entries => {
+        if (live) setArtwork(previous => ({ id: draft.id, active: ids, urls: {
+          ...Object.fromEntries(Object.entries(previous.id === draft.id ? previous.urls : {}).filter(([id]) => previous.active.includes(id))),
+          ...Object.fromEntries(entries),
+        } }))
+      })
         .catch((error: unknown) => { if (live) actions.notice(error instanceof Error ? error.message : String(error)) })
     }
     return () => { live = false }

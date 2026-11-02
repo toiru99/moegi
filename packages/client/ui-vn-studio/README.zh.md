@@ -1,19 +1,27 @@
-# 视觉小说工作室
+# VN Studio
 
-首页的标题和故事创意均为空。可以请已连接的AI创作，也可以创建空白项目手动编辑，或主动选择已保存的作品。只有带 `project` 参数的链接会直接打开项目，浏览器记住的选择不再自动恢复。安装包不附带示例故事或美术；既有项目及其素材仍可读取。
+VN Studio 是本地 AI 辅助视觉小说制作工具。运行中的播放器由 React/Web API 独立实现，读取创作项目 JSON 和经验证的项目素材，不编译商业游戏脚本、不载入原作界面资源，也不启动原作可执行文件。旧原生编译模块只保留为历史研究工具，不属于应用的播放路径。
 
-图片默认通过已登录的本地Codex CLI及其公开stdio app-server协议生成，使用Codex套餐，无需Images API密钥。`codexImageEnabled`默认为true，`codexExecutable`默认为`codex`，`codexImageTimeoutMs`默认为300000。提供者管理独立的临时只读任务、取消与进程清理，只接收已完成的原生PNG，人物图片要求实际透明。可选Images API连接独立使用其API额度。缺少API密钥不会阻止已就绪的Codex提供者；必需素材未完成时，制作状态仍为未完成。制作指导的修改工具返回修订号、变更ID和数量等精简回执，显式读取及Remote UI仍返回完整项目。计划乐谱接受对象或JSON字符串，验证后保存为字符串。
+编辑器自带舞台、选项、标题、存读档、阅读记录、自动播放、快进、音频和设置。游戏进度与创作文档分开保存；重新开始不会丢弃尚未保存的编辑。原生存档仍保留在磁盘上，但不会导入浏览器进度。生成的作品标题、对白框和指针素材用于独立播放器；AI 面板共享作品标题图和实际制作数量。
 
-VN Studio保存带修订号的小说文档、注册 `vn_project` 工具，并使用真正的siglus_rs引擎预览。结构化编辑器位于现有右侧栏。此包用于本地开发，设置中提供独立的ChatGPT连接页，与编辑器共享登录状态。
-
-为 `vn-studio` 配置 `projectDirectory`、`previewDirectory`、`compilerDirectory` 和 `fontFile` 后启用。安装时默认禁用，避免自动选择目录或运行引擎。编译目录需要 Windows 版 `siglus_script_compiler.exe`、`siglus_scene_linker.exe` 和 `siglus_engine.exe`。预览用文件名选择提供的字体并复制到快照中。本地开发使用完整的Noto Sans CJK KR Regular；Noto Sans KR子集和Malgun Gothic缺少部分日文汉字。字体来源与许可：[Noto Sans CJK](https://github.com/notofonts/noto-cjk/blob/main/Sans/README.md)、[OFL](https://github.com/notofonts/noto-cjk/blob/main/Sans/LICENSE)。
-
-编辑器支持创建和打开项目、编辑对白和选项、保存、重新加载、撤销保存以及在 Siglus 中运行。未保存的修改会禁用替换当前草稿的操作。智能体通过同一个 `vn_project` 工具访问相同场景图；保存前读取，智能体编辑后重新加载。选项目标必须存在，保存与撤销需要当前修订号。一个 Host 顺序执行写操作，在2 MiB文件上限内最多保留五个历史版本；不要让多个 Host 写入相同目录。
+只需配置 projectDirectory；previewDirectory 和旧编译器、字体字段仍可选以兼容旧配置。dev-tools/use-browser-player.mjs 可移除托管配置中的旧原生绑定，同时保留项目和账户设置。预览返回浏览器项目链接或描述，不创建原生进程。浏览器播放不需要安装原商业游戏。
 
 ## Model Experience
 
-插件提供一个 `vn_project` 工具，返回项目数据和修订号的 JSON 文本。读取或保存会将整个场景图加入对话，因此文档与历史大小受到限制。插件不额外调用模型，也不改变缓存策略。ChatGPT登录和Responses传输由现有 `llm-pi-ai` 提供者负责；配置 `openai-codex` 路由后，在编辑器或设置中点击ChatGPT登录按钮，启动浏览器PKCE流程。弹窗被阻止时仍可手动打开链接。凭据保存在现有Host凭据存储中。
+默认启用的 vn-director 插件和随包技能会规划人物、关系、节奏和真实素材任务，随后写入完整场景。优先使用已登录的原生 Codex 图片能力，也可实际合成本地 WAV 音乐与音效。prepare_media 会为项目准备原创标题、透明指针和对白框。就绪检查依据已验证的素材文件、实际布置、场景可达性和计划节奏；保留既有素材、对白、选项和构图。必需素材未完成时作品仍为未完成。
 
-## Known Limitations and Deferred Work
+ChatGPT 写作沿用账户与 Responses 集成；图片通过已安装 Codex 的公开 app-server 和其登录状态生成。应用不提取或发布凭据。可选 Images API 密钥独立配置。操作使用当前修订号、有限任务数和取消信号。智能体修改返回精简回执；显式读取及 UI 方法返回完整创作数据。
 
-当前只支持文字、话者与场景选项，不导入完整商业脚本，不复制原作素材，也不开放全部 Siglus 渲染命令。预览使用未压缩 easy-link 格式。文件写入只在同一个 Host 内串行化，原生渲染、字体和存档由引擎管理。当前 Windows 工具链尚不提供跨平台分发流程。
+## 演出制作包（vn.16）
+
+默认指导会规划情绪转折、参考图驱动的表情或姿势差分、事件 CG，以及选项的即时和后续反馈。新章节和用户要求的修改会自动采用该流程；既有章节不会被自动改写。详细示例随包位于 assets/skills/vn-director/references/direction.md。
+
+lines[].visual 是完整画面快照，持续到下一个演出提示；未提供时继承此前快照或场景默认画面。支持 shot（wide、medium、close）、focus（当前人物槽位）、transition（cut、dissolve）和 cg（已入库的背景图片 ID，替代普通背景与人物）。每个新快照须包含希望继续的音乐。播放器遵守减少动态效果设置，不提供 Live2D 或任意动画时间轴。
+
+选项支持有界布尔 when 和 effects。全部条件必须匹配，未设标志视为 false。结果保存在普通和快速存档中，重新开始时清空，不改写创作内容。没有这些新增字段的旧文档和存档仍可读取。这是布尔剧情记忆，不是数值好感度系统或阅读记录回滚。
+
+图片任务可提供至多三个已入库的 referenceAssetIds。先生成基础人物图，再用返回的真实 ID 生成差分或事件 CG。参考图须通过完整性检查，并作为原生本地图片输入传给 Codex。可选的纯生成 Images API 适配器会明确拒绝参考图编辑请求。差分须布置到对应对白快照中；就绪检查识别场景与对白级布置。
+
+## 限制与许可
+
+浏览器播放是适用于 Windows/macOS 的实现路径；实际验证环境为 Windows，尚未在真实 Mac 上测试。每个画面最多显示三个人物。用户已有故事和生成素材仍是用户数据。既有开源依赖保留其许可；独立播放器不代表整个上游应用成为专有或完全原创。历史逆向研究不授予原商业脚本、可执行文件或素材的商业分发权。

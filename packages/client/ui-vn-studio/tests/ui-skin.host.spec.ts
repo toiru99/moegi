@@ -62,7 +62,7 @@ it('generates original interface data in bounded resumable jobs and preserves st
     const bg = await f.ctx.vnMedia.assets.importResult('demo', 0, 'background', 'Existing background', await png('#334455'))
     let before = await f.ctx.vnStudio.documents.save('demo', bg.saved.revision, { ...bg.saved.project,
       scenes: [{ ...bg.saved.project.scenes[0], lines: [{ speaker: '서윤', text: 'Prior dialogue is preserved.' }] }] }, 'manual')
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true,
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true,
       generate: async request => { requests.push(request); return png(['#445566', '#556677', '#667788'][requests.length - 1]) } })
     expect((await f.ctx.vnSkin.status('demo')).roles.every(role => role.state === 'pending')).toBe(true)
     const first = await f.ctx.vnSkin.prepare('demo', before.revision, undefined, 1)
@@ -106,7 +106,7 @@ it('attaches the three most recurring planned character assets only to the title
       media: ids.map((assetId, index) => ({ id: `heroine_${index}`, kind: 'character', name: `Heroine ${index}`, assetId,
         sceneIds: index === 0 ? ['start'] : index === 3 ? ['start', 'next', 'third'] : ['start', 'next'] })) }
     saved = await f.ctx.vnStudio.documents.save('demo', saved.revision, { ...saved.project, production }, 'manual')
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true,
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true,
       generate: async request => { requests.push(request); return png() } })
     await f.ctx.vnSkin.prepare('demo', saved.revision)
     expect(requests[0]?.presentation?.references).toEqual(await Promise.all([ids[3]!, ids[1]!, ids[2]!].map(id => f.ctx.vnMedia.assets.path('demo', id))))
@@ -119,7 +119,7 @@ it('attaches the three most recurring planned character assets only to the title
 it('returns compact model receipts while ordinary host calls retain full saved revisions', async () => {
   const f = await setup()
   try {
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true, generate: async () => png() })
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true, generate: async () => png() })
     const saved = await f.ctx.vnStudio.documents.save('demo', 0, { ...f.saved.project,
       scenes: [{ ...f.saved.project.scenes[0], lines: [{ speaker: '', text: 'Private authored dialogue.' }] }] }, 'manual')
     const result = await executeToolFixture(f.ctx, { callId: ToolCallId('prepare-skin'), name: 'vn_skin',
@@ -140,7 +140,7 @@ it('keeps an assigned missing file blocked until replacement is explicitly reque
   const f = await setup()
   try {
     let generated = 0
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true, generate: async () => png(generated++ ? '#667788' : '#446688') })
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true, generate: async () => png(generated++ ? '#667788' : '#446688') })
     const first = await f.ctx.vnSkin.prepare('demo', 0, undefined, 1)
     const assetId = first.saved.project.uiSkin!.title!
     await unlink(await f.ctx.vnMedia.assets.path('demo', assetId))
@@ -155,7 +155,7 @@ it('cancels provider output and waits for it during disposal without importing a
   const f = await setup(), entered = Promise.withResolvers<void>(), finish = Promise.withResolvers<Buffer>()
   let providerSignal: AbortSignal | undefined
   try {
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true,
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true,
       generate: async request => { providerSignal = request.signal; entered.resolve(); return finish.promise } })
     const pending = f.ctx.vnSkin.prepare('demo', 0), rejected = expect(pending).rejects.toThrow(/abort/i)
     await entered.promise
@@ -180,7 +180,7 @@ it('rejects stale revisions, oversized briefs and out-of-range job limits before
 it('passes caller cancellation through the final queued binding save', async () => {
   const f = await setup(), entered = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>(), caller = new AbortController()
   try {
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true, generate: async () => png() })
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true, generate: async () => png() })
     const original = f.ctx.vnStudio.documents.save.bind(f.ctx.vnStudio.documents)
     const save = vi.spyOn(f.ctx.vnStudio.documents, 'save').mockImplementation(async (...args) => {
       const project = args[2]
@@ -200,7 +200,7 @@ it('keeps previously bound roles when a later native generation fails', async ()
   const f = await setup()
   try {
     let count = 0
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true,
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true,
       generate: async () => { if (++count === 2) throw new Error('Native limit reached'); return png() } })
     await expect(f.ctx.vnSkin.prepare('demo', 0)).rejects.toThrow('Native limit reached')
     const saved = await f.ctx.vnStudio.read('demo')
@@ -213,7 +213,7 @@ it('accepts the full brief limit and long project titles within provider and ass
   const f = await setup(), requests: MediaRequest[] = []
   try {
     const saved = await f.ctx.vnStudio.documents.save('demo', 0, { ...f.saved.project, title: '가'.repeat(256) }, 'manual')
-    f.ctx.vnMedia.providers.register({ id: 'codex-images', kinds: ['background'], ready: async () => true,
+    f.ctx.vnMedia.providers.register({ id: 'codex-images', supportsReferences: true, kinds: ['background'], ready: async () => true,
       generate: async request => { requests.push(request); return png() } })
     const result = await f.ctx.vnSkin.prepare('demo', saved.revision, '나'.repeat(4000), 1)
     expect(result.saved.project.uiSkin?.brief).toHaveLength(4000)

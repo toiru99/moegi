@@ -55,6 +55,46 @@ it('restores quick/manual slots and settings after restart without authoring wri
   await restarted.close()
 })
 
+it('persists bounded boolean flags, accepts old slots without flags and leaves author progress untouched', async () => {
+  const { root, games } = await fixture()
+  const before = await readFile(join(root, 'demo.json'), 'utf8')
+  await games.save('demo', 0, JSON.stringify({ ...position, flags: { trusted: true, declined: false } }))
+  await games.close()
+  const restarted = new PlaybackStore(new SceneStore(root))
+  expect((await restarted.load('demo', 0)).flags).toEqual({ trusted: true, declined: false })
+  const path = join(root, 'demo.playback.json')
+  const stored = JSON.parse(await readFile(path, 'utf8'))
+  delete stored.slots[0].flags
+  await writeFile(path, JSON.stringify(stored))
+  expect((await restarted.load('demo', 0)).flags ?? {}).toEqual({})
+  const accumulated = Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`f${index}`, true]))
+  await restarted.save('demo', 2, JSON.stringify({ ...position, flags: accumulated }))
+  expect((await restarted.load('demo', 2)).flags).toEqual(accumulated)
+  const oldBytes = await readFile(path, 'utf8')
+  for (const flags of [[], null, { trusted: 1 }, { 'invalid.key': true }, Object.fromEntries(Array.from({ length: 8193 }, (_, index) => [`f${index}`, true]))]) {
+    await expect(restarted.save('demo', 1, JSON.stringify({ ...position, flags }))).rejects.toThrow(/flag|object|limit/i)
+    expect(await readFile(path, 'utf8')).toBe(oldBytes)
+  }
+  expect(await readFile(join(root, 'demo.json'), 'utf8')).toBe(before)
+  await restarted.close()
+})
+
+it('saves and restores all seven slots with the maximum accumulated flags and history', async () => {
+  const { root, games } = await fixture()
+  const flags = Object.fromEntries(Array.from({ length: 8192 }, (_, index) => [`f${String(index).padStart(63, '0')}`, index % 2 === 0]))
+  const history = Array.from({ length: 200 }, () => position.history[0]!)
+  const payload = JSON.stringify({ ...position, history, flags })
+  expect(Buffer.byteLength(payload)).toBeGreaterThan(64 * 1024)
+  for (let slot = 0; slot <= 6; slot++) await games.save('demo', slot, payload)
+  await games.close()
+  const restarted = new PlaybackStore(new SceneStore(root))
+  const slots = await restarted.slots('demo')
+  expect(slots).toHaveLength(7)
+  expect(slots.every(slot => Object.keys(slot.flags ?? {}).length === 8192 && slot.history.length === 200)).toBe(true)
+  expect((await restarted.load('demo', 6)).flags).toEqual(flags)
+  await restarted.close()
+})
+
 it('isolates saves and preferences by project and owns immutable returned values', async () => {
   const { documents, games } = await fixture()
   await documents.create('other', 'Other', 'ja')

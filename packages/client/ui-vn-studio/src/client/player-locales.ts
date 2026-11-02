@@ -1,5 +1,6 @@
 /** Reusable game-system and production-pack copy, independent of story content. */
 export const playerEn = {
+  gameFlagLimit: 'This choice exceeds the game state limit. Your current progress is unchanged.',
   directorUnavailable: 'Enable the installed production director to inspect the production plan.',
   gameStale: 'The story changed. Reload the project and choose a compatible game save.',
   gameControls: 'Game controls', gameTitle: 'Title', gameStart: 'Start reading', gameSave: 'Game save', gameLoad: 'Game load', quickSave: 'Quick save', quickLoad: 'Quick load', backlog: 'History', autoPlay: 'Auto', skipPlay: 'Skip', gameSettings: 'Game settings', soundOn: 'Enable sound', soundOff: 'Mute sound', closeGameMenu: 'Close',
@@ -9,6 +10,7 @@ export const playerEn = {
 }
 export type PlayerKey = keyof typeof playerEn
 export const playerKo: Record<PlayerKey, string> = {
+  gameFlagLimit: '이 선택은 게임 상태 한도를 넘어요. 현재 진행은 그대로 유지돼요.',
   directorUnavailable: '설치된 제작 디렉터를 켜면 제작 계획과 진행 상황을 확인할 수 있어요.',
   gameStale: '작품이 바뀌었어요. 제작 파일을 새로 읽고 호환되는 게임 세이브를 골라 주세요.',
   gameControls: '플레이 조작', gameTitle: '타이틀', gameStart: '이야기 시작', gameSave: '게임 세이브', gameLoad: '게임 로드', quickSave: '퀵 세이브', quickLoad: '퀵 로드', backlog: '백로그', autoPlay: '오토', skipPlay: '스킵', gameSettings: '게임 설정', soundOn: '소리 켜기', soundOff: '소리 끄기', closeGameMenu: '닫기',
@@ -17,6 +19,7 @@ export const playerKo: Record<PlayerKey, string> = {
   directorRequest: '현재 미연시 "{title}"(작품 ID: {id})를 설치된 vn_director 미연시 제작 기본팩으로 이어서 제작해줘. 작품과 스킬을 읽고 인물, 점진적인 관계 변화, 장면별 목적, 필요한 모든 배경·캐릭터·음악·효과음의 제작 계획부터 저장해줘. 구체적인 함께하는 활동과 연속성을 담아 계획한 장면을 충분히 집필해줘. 사용 가능한 제공자로 소재를 만들고 실제로 배치하되 기존 내용과 소재를 보존해줘. status로 검수하고 남은 작업을 정직하게 알려줘. 내가 이미지나 음악 제작을 별도로 요청할 때까지 기다리지 마.',
 }
 export const playerJa: Record<PlayerKey, string> = {
+  gameFlagLimit: 'この選択はゲーム状態の上限を超えます。現在の進行は保持されます。',
   directorUnavailable: '制作ディレクターを有効にすると計画と進行状況を確認できます。',
   gameStale: '作品が変更されました。制作ファイルを再読み込みし、対応するセーブを選んでください。',
   gameControls: 'ゲーム操作', gameTitle: 'タイトル', gameStart: '読む', gameSave: 'ゲームセーブ', gameLoad: 'ゲームロード', quickSave: 'クイックセーブ', quickLoad: 'クイックロード', backlog: 'バックログ', autoPlay: 'オート', skipPlay: 'スキップ', gameSettings: 'ゲーム設定', soundOn: '音を有効にする', soundOff: '消音', closeGameMenu: '閉じる',
@@ -25,6 +28,7 @@ export const playerJa: Record<PlayerKey, string> = {
   directorRequest: '作品「{title}」(ID: {id})を標準のvn_director制作パックで続けてください。作品とスキルを読み、人物、段階的な関係変化、場面の目的、背景・人物絵・音楽・効果音の計画を保存してください。共同作業や連続性を描き、場面を十分に執筆してください。利用可能な生成手段で素材を作り配置し、既存内容を保持してください。statusで確認し、未完了の作業を正確に報告してください。美術や音楽を別途頼むまで待たないでください。',
 }
 export const playerZh: Record<PlayerKey, string> = {
+  gameFlagLimit: '此选项超过游戏状态上限，当前进度保持不变。',
   directorUnavailable: '启用已安装的制作导演即可查看计划和进度。',
   gameStale: '作品已更改。请重新读取制作文件并选择兼容的游戏存档。',
   gameControls: '游戏控制', gameTitle: '标题', gameStart: '开始阅读', gameSave: '游戏存档', gameLoad: '游戏读档', quickSave: '快速存档', quickLoad: '快速读档', backlog: '回顾', autoPlay: '自动', skipPlay: '快进', gameSettings: '游戏设置', soundOn: '开启声音', soundOff: '静音', closeGameMenu: '关闭',

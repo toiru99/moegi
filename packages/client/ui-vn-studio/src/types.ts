@@ -64,6 +64,8 @@ export interface ProductionMedia {
   scoreJson?: string
   preset?: 'bell' | 'rain' | 'steps'
   assetId?: string
+  /** Up to three admitted project image ids; absent means generation without image references. */
+  referenceAssetIds?: string[]
 }
 
 /** Inspectable production problems derived from saved content rather than literary scores. */
@@ -92,8 +94,10 @@ export interface ProductionStatus {
 export interface NovelScene {
   id: string
   title: string
-  lines: { speaker: string; text: string }[]
-  choices: { text: string; target: string }[]
+  /** A visual is a complete snapshot, retained until the next beat snapshot; absence uses the preceding snapshot or scene.visual. */
+  lines: { speaker: string; text: string; visual?: SceneVisual }[]
+  /** Boolean requirements and assignments use at most 64 identifier keys; unspecified flags read false. */
+  choices: { text: string; target: string; when?: Record<string, boolean>; effects?: Record<string, boolean> }[]
   visual?: SceneVisual
 }
 
@@ -118,11 +122,17 @@ export interface SceneVisual {
   characters: { asset: string; x: number; y: number; scale: number }[]
   music?: string
   sound?: string
+  shot?: 'wide' | 'medium' | 'close'
+  transition?: 'cut' | 'dissolve'
+  /** Zero-based character slot; when present it must name one of the snapshot's visible characters. */
+  focus?: number
+  /** An admitted background image displayed as the full-scene CG. */
+  cg?: string
 }
 
 /** Provider readiness and upload policy, with no stored credential values. */
 export interface MediaStatus {
-  providers: { id: string; kinds: AssetKind[]; ready: boolean }[]
+  providers: { id: string; kinds: AssetKind[]; ready: boolean; supportsReferences?: boolean }[]
   maxAssetBytes: number
   imageModel: string
 }

@@ -12,6 +12,16 @@ The default-on vn-director plugin and packaged skill plan cast, relationships, s
 
 ChatGPT writing uses the existing account/Responses integration; image generation uses the public installed Codex app-server with managed sign-in. The app does not extract or publish credentials. An optional Images API key remains separate. Commands use current revisions, bounded jobs and cancellation. Agent mutation receipts are compact; explicit reads and UI methods return full authoring data.
 
+## Direction pack (vn.16)
+
+The default director now plans emotional turns, referenced expression/pose variants, event CGs, and choices with immediate and later feedback. It applies automatically to new chapters and requested revisions. Existing chapters are preserved until requested for revision. Detailed authoring examples ship in `assets/skills/vn-director/references/direction.md` beside the default skill.
+
+Each `lines[].visual` is a complete visual snapshot retained until the next cue; absent snapshots inherit the previous cue or scene visual. Supported direction fields are `shot` (`wide`, `medium`, `close`), `focus` (current portrait slot), `transition` (`cut`, `dissolve`) and `cg` (admitted background image id, replacing ordinary background/portraits). Include intended persistent music in each new full snapshot. The player respects reduced motion. No Live2D or arbitrary animation timeline is implied.
+
+Choices support bounded boolean `when` and `effects` maps. All conditions must match; unset flags read false. Effects survive manual and quick saves, clear on a new start, and never mutate authored stories. Existing documents and save slots without these additions remain readable. This is boolean story memory, not a numeric relationship simulation or history rollback.
+
+Image tasks accept up to three admitted `referenceAssetIds`. Generate base portraits first, then use their returned ids to generate variants or event CGs through native Codex. References are integrity-checked project images and forwarded as native local-image inputs. The optional generations-only Images API adapter explicitly rejects reference editing requests rather than discarding them. Assign variants in beat snapshots; readiness recognizes both scene and beat image placements.
+
 ## Limits and licensing
 
 Browser gameplay is the Windows/macOS-independent execution path; this change is verified on Windows, not an actual Mac. Each scene supports up to three visible portraits. Supplied game stories and all previously generated project assets remain user's data. Existing open-source dependencies retain their licenses; independent gameplay does not make the entire upstream application proprietary or wholly original. Historical recovered-runtime research does not grant commercial distribution rights to original commercial scripts, executable files or media.

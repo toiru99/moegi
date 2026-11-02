@@ -1,9 +1,10 @@
 /** Browser rehearsal locations; line equal to scene length denotes choices or the ending. */
 export interface PlaybackPosition { sceneId: string; line: number }
 
-/** Optional fingerprint rejects a client snapshot that differs from the durable story. */
+/** Independent position, history and boolean flags; fingerprint rejects a changed story. */
 export interface PlaybackState extends PlaybackPosition {
   history: PlaybackPosition[]
+  flags?: Record<string, boolean>
   fingerprint?: string
 }
 
@@ -13,6 +14,7 @@ export interface GameSave extends PlaybackPosition {
   time: string
   fingerprint: string
   history: PlaybackPosition[]
+  flags?: Record<string, boolean>
   title: string
   text: string
 }
@@ -27,6 +29,9 @@ export interface PlayerSettings {
 
 /** Maximum persisted visited positions per browser slot. */
 export const MAX_PLAYBACK_HISTORY = 200
+
+/** Accumulated gameplay flags, independently bounded from each authored choice map. */
+export const MAX_PLAYBACK_FLAGS = 8192
 
 /** Initial player preferences, copied per project until the user saves settings. */
 export const DEFAULT_PLAYER_SETTINGS: Readonly<PlayerSettings> = Object.freeze({
