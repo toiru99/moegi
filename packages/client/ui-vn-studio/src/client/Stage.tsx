@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DIALOGUE_LAYOUT } from '../dialogue-layout.ts'
 import type { NovelProject, NovelScene, SceneVisual } from '../types.ts'
 import { choiceFlagsMatch, resolveSceneDirection } from '../direction.ts'
 import { characterRect, STAGE_HEIGHT, STAGE_WIDTH } from '../stage.ts'
@@ -11,6 +12,9 @@ export function Stage({ project, scene, line, urls, next, choose, flags = {}, te
   project: NovelProject; scene: NovelScene; line: number; urls: Record<string, string>; next(): void; choose(target: string, originalChoiceIndex?: number): void; flags?: Record<string, boolean>; textScale?: number; artOnly?: boolean; dialogueFrame?: string | undefined
 }) {
   const current = scene.lines[Math.min(line, scene.lines.length - 1)]
+  const { width, height, name, body } = DIALOGUE_LAYOUT
+  const skinned = Boolean(dialogueFrame) && !artOnly
+  const speaker = current?.speaker.trim()
   const { visual, cueIndex } = resolveSceneDirection(scene, line)
   const imageIds = visual?.cg === undefined ? [visual?.background, ...visual?.characters.map(value => value.asset) ?? []] : [visual.cg]
   const ready = imageIds.every(id => id === undefined || Boolean(urls[id]))
@@ -40,14 +44,22 @@ export function Stage({ project, scene, line, urls, next, choose, flags = {}, te
       })}
     </>
   }
-  return <section className={css.stage} data-shot={visual?.shot ?? 'wide'} data-skinned={Boolean(dialogueFrame) && !artOnly} aria-label={t(artOnly ? 'compositionPreview' : 'gameStage')}>
+  return <section className={css.stage} data-shot={visual?.shot ?? 'wide'} data-skinned={skinned} aria-label={t(artOnly ? 'compositionPreview' : 'gameStage')}>
     {layers.previous !== undefined && <div className={css.visualLayer} data-shot={layers.previous.shot ?? 'wide'} aria-hidden="true">{artwork(layers.previous)}</div>}
     <div key={cue} className={css.visualLayer} data-shot={visual?.shot ?? 'wide'} data-transition={ready ? visual?.transition ?? 'cut' : 'cut'} style={{ visibility: ready ? 'visible' : 'hidden' }}>{artwork(visual)}</div>
     {!artOnly && dialogueFrame && <img className={css.dialogueFrame} src={dialogueFrame} alt={t('dialogueArtwork')} />}
     {!artOnly && choices.length > 0 && <div className={css.stageChoices}>{choices.map(({ choice, index }) => <Button variant="outline" key={index} onClick={() => { choose(choice.target, index) }}>{choice.text}</Button>)}</div>}
-    {!artOnly && <button className={css.dialogueBox} onClick={next} aria-label={t('nextLine')} style={{ fontSize: `clamp(11px, ${2.4 * textScale}cqw, ${18 * textScale}px)` }}>
-      {current?.speaker && <span className={css.speakerName}>{current.speaker}</span>}
-      <span>{current?.text || t('emptyDialogue')}</span>
+    {!artOnly && <button className={css.dialogueBox} onClick={next} aria-label={t('nextLine')} style={skinned ? {
+      left: `${100 * body.x / width}%`, top: `${100 * body.y / height}%`,
+      width: `${100 * body.columns * body.fontSize / width}%`, height: `${100 * body.rows * (body.fontSize + body.lineSpacing) / height}%`,
+      fontSize: `clamp(11px, ${100 * body.fontSize * textScale / width}cqw, ${body.fontSize * textScale}px)`,
+    } : { fontSize: `clamp(11px, ${2.4 * textScale}cqw, ${18 * textScale}px)` }}>
+      {speaker && <span className={css.speakerName} style={skinned ? {
+        left: `${100 * (name.x - body.x) / (body.columns * body.fontSize)}%`,
+        bottom: `calc(100% + ${100 * (body.y - name.y - name.fontSize) / width}cqw)`,
+        maxWidth: `${100 * name.columns * (name.fontSize + name.spacing) / width}cqw`,
+      } : undefined}>{speaker}</span>}
+      <span key={`${scene.id}:${line}`} className={css.dialogueText}>{current?.text || t('emptyDialogue')}</span>
       <span className={css.advance} aria-hidden="true">▸</span>
     </button>}
   </section>

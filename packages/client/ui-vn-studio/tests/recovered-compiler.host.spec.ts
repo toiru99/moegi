@@ -68,7 +68,7 @@ async function fixture() {
     'runtime/Original.exe': 'original engine',
     'runtime/g00/_sys_sel_btn.g00': 'original choice art',
     'runtime/font/original.ttf': 'original glyph coverage',
-    'config/Gameexe.ini': '#START_SCENE="old"\n#CAPTION="original"\n#SCREEN_SIZE=1920,1080\n#TWITTER.CONSUMER_KEY="private-secret"\n#BGM.CNT=0\n#MWND.000.POS=0,700\n',
+    'config/Gameexe.ini': '#START_SCENE="old"\n#CAPTION="original"\n#SCREEN_SIZE=1920,1080\n#TWITTER.CONSUMER_KEY="private-secret"\n#BGM.CNT=0\n#MWND.000.POS=0,700\n#MWND.000.NAME_BRACKET = 1\n',
   }
   const files = []
   for (const [path, content] of Object.entries(contents)) {
@@ -302,6 +302,13 @@ it('binds admitted AI skin images to original texture cuts while preserving nati
   const f = await skinFixture()
   const result = await compileRecoveredProject(f.authored, 1, f.builds, f.base, process.execPath, f.storage)
   const snapshot = dirname(result.directory)
+  const config = await readFile(join(snapshot, 'config/Gameexe.ini'), 'utf8')
+  expect(config.match(/^#MWND\.000\.NAME_BRACKET.*$/gm)).toEqual(['#MWND.000.NAME_BRACKET=0'])
+  expect(config).toContain('#MWND.000.MESSAGE_POS=442, 91')
+  expect(config).toContain('#MWND.000.NAME_WINDOW_POS=417, 24')
+  const authoredSource = await readFile(join(result.directory, 'Scene.pck'), 'utf8')
+  expect(authoredSource).not.toContain('set_namae("")')
+  expect(authoredSource).toContain('"왼쪽 결과" r()')
   const layout = JSON.parse(await readFile(join(result.directory, 'g00/_menu_bg.g00'), 'utf8')) as {
     canvas: { width: number; height: number }
     default_center: { x: number; y: number }

@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { DIALOGUE_LAYOUT } from './dialogue-layout.ts'
 import type {} from './controller.ts'
 import type {} from './media.ts'
 import type { NovelProject, NovelUiSkin, ProjectRevision, UiSkinRole, UiSkinStatus } from './types.ts'
@@ -24,6 +25,7 @@ function skinBrief(project: NovelProject, supplied?: string): string {
 }
 
 function skinPrompt(project: NovelProject, role: UiSkinRole, brief: string, cast: string[]): string {
+  const { width, height, frameTop, name, body } = DIALOGUE_LAYOUT
   const context = [project.title, project.production?.premise, project.production?.tone, brief].join(' ')
   const style = /gym|fitness|training|헬스|운동|피트니스/i.test(context)
     ? 'Create a coherent original training-romance identity with black/navy foundations, teal accents, polished gym materials and restrained light.'
@@ -32,7 +34,7 @@ function skinPrompt(project: NovelProject, role: UiSkinRole, brief: string, cast
     ? `Game title: ${JSON.stringify(project.title)}. Render this exact title legibly in its original ${project.language === 'ko' ? 'Korean' : 'Japanese'} spelling as the only readable lettering. Create a complete opaque 1920x1080 landscape title-screen illustration with an original title/logo in the upper-left or middle-left and ${cast.length ? `the referenced heroines (${cast.join(', ')}) recognizable in the centre/right` : 'story-specific imagery in the centre/right'}. Preserve attached character identities and outfits. Reserve the entire bottom y=915..1080 as quiet background, with no title, faces, or essential art, for the player controls. Do not reproduce any commercial game title/logo or borrowed commercial characters. No baked-in buttons, menus, start/load labels, watermarks or other UI controls.`
     : role === 'cursor'
       ? `Create exactly one ${/gym|fitness|training|헬스|운동|피트니스/i.test(context) ? 'training/barbell-themed' : 'story-themed'} mouse cursor pointing upper-left, with a clearly visible tip at the upper-left and a compact readable silhouette at 32x32 display size. Use a square transparent PNG canvas with real alpha, clear padding around the single pointer, no human, no scene, no letters, no buttons and no watermark.`
-      : 'Create a full 1920x1080 transparent PNG dialogue frame. Upper y=0..787 (788 pixels) must be completely transparent. ONLY the lower 292 pixels, y=788..1079, may contain a dark readable text backing with restrained ornate genre trim and real alpha outside it. Within that bottom frame, leave the speaker region local (385,14,521,52) and body region local (445,68,1147,178) visually quiet and dark; also preserve Japanese speaker origin (415,44) and body origin (475,98). Put decoration at the far edges away from these text areas. No letters, text, characters, portraits, icons, UI buttons or watermark.'
+      : `Create a full ${width}x${height} transparent PNG dialogue frame. Keep the upper ${frameTop} pixels completely transparent. Use only the lower ${height - frameTop} pixels for one continuous dark, readable text backing with restrained decoration along the outer edges. Keep the interior uniformly quiet and dark from x=380 through 1630, including the speaker origin (${name.x},${name.y}) and body origin (${body.x},${body.y}). The game places text and controls there. No inner boxes, nameplates, separators, letters, characters, icons, buttons or watermark.`
   const header = `${composition}\n${style}\nStory premise: ${project.production?.premise ?? project.title}\nTone: ${project.production?.tone ?? 'Follow the project voice.'}\nAuthored visual brief:\n`
   // Provider prompts have the same 4000-character admission limit as ordinary project images.
   return `${header}${brief.slice(0, Math.max(0, 4000 - header.length))}`.slice(0, 4000)

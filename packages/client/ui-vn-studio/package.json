@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-vn-studio",
   "description": "Local visual novel authoring tools and independent browser player",
-  "version": "0.2.2-alpha.2-vn.18",
+  "version": "0.2.2-alpha.2-vn.19",
   "publishConfig": {
     "access": "public"
   },

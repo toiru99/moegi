@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import sharp from 'sharp'
 import { AssetStore, assetExtension } from './assets.ts'
 import { composeScene } from './compose-scene.ts'
+import { DIALOGUE_LAYOUT } from './dialogue-layout.ts'
 import { parseProject, SceneStore } from './store.ts'
 import type { NovelProject, NovelScene, SceneVisual, UiSkinRole } from './types.ts'
 
@@ -119,7 +120,8 @@ function sceneSource(scene: NovelScene, cues: DirectionCue[], flags: Record<stri
     output.push('savepoint()')
     const cue = cues.find(cue => cue.line === index)
     if (cue !== undefined) emitCue(cue, index === 0)
-    output.push(`set_namae(${literal(line.speaker)})`, `${literal(line.text)} r()`)
+    if (line.speaker.trim() !== '') output.push(`set_namae(${literal(line.speaker)})`)
+    output.push(`${literal(line.text)} r()`)
   }
   if (scene.choices.length !== 0) {
     const choiceArgs = scene.choices.map(choice => {
@@ -211,8 +213,11 @@ function skinLayout(value: unknown, texture: SkinTexture) {
 
 async function skinImage(role: UiSkinRole, bytes: Buffer): Promise<Buffer> {
   if (role === 'title') return sharp(bytes).resize(1920, 1080, { fit: 'cover' }).ensureAlpha().png().toBuffer()
-  if (role === 'dialogue') return sharp(bytes).resize(1920, 1080, { fit: 'fill' })
-    .extract({ left: 0, top: 788, width: 1920, height: 292 }).ensureAlpha().png().toBuffer()
+  if (role === 'dialogue') {
+    const { width, height, frameTop } = DIALOGUE_LAYOUT
+    return sharp(bytes).resize(width, height, { fit: 'fill' })
+      .extract({ left: 0, top: frameTop, width, height: height - frameTop }).ensureAlpha().png().toBuffer()
+  }
   const image = sharp(bytes)
   if (!(await image.metadata()).hasAlpha) throw new Error('Cursor skin must have a transparent background.')
   const { data, info } = await image.ensureAlpha().raw().toBuffer({ resolveWithObject: true })
@@ -380,7 +385,25 @@ export async function compileRecoveredProject(
       await writeFile(join(source, `${sceneName(scene.id)}.ss`), sceneSource(scene, cues, flags), 'utf8')
     }
     const configPath = join(staging, template.configSource), originalConfig = await readFile(configPath, 'utf8')
-    const config = originalConfig.split(/\r?\n/).filter(line => !/^\s*#(?:TWITTER[.\w]*|START_SCENE|CAPTION|GAMENAME|BGM\.(?:CNT|\d+))\s*=/i.test(line)).join('\n')
+    const { frameTop, name, body } = DIALOGUE_LAYOUT
+    const dialogueConfig = new Map([['NAME_BRACKET', '0']])
+    if (skinBindings.some(binding => binding.role === 'dialogue')) {
+      dialogueConfig.set('MESSAGE_POS', `${body.x}, ${body.y - frameTop}`)
+      dialogueConfig.set('MESSAGE_MARGIN', '0, 0, 0, 0')
+      dialogueConfig.set('MOJI_CNT', `${body.columns}, ${body.rows}`)
+      dialogueConfig.set('MOJI_SIZE', String(body.fontSize))
+      dialogueConfig.set('MOJI_SPACE', `0, ${body.lineSpacing}`)
+      dialogueConfig.set('NAME_WINDOW_POS', `${name.x}, ${name.y - frameTop}`)
+      dialogueConfig.set('NAME_MESSAGE_MARGIN', '0, 0, 0, 0')
+      dialogueConfig.set('NAME_MOJI_CNT', String(name.columns))
+      dialogueConfig.set('NAME_MOJI_SIZE', String(name.fontSize))
+      dialogueConfig.set('NAME_MOJI_SPACE', `${name.spacing}, 0`)
+    }
+    const config = originalConfig.split(/\r?\n/).filter(line => {
+      if (/^\s*#(?:TWITTER[.\w]*|START_SCENE|CAPTION|GAMENAME|BGM\.(?:CNT|\d+))\s*=/i.test(line)) return false
+      const key = /^\s*#MWND\.000\.(\w+)\s*=/i.exec(line)?.[1]
+      return key === undefined || !dialogueConfig.has(key.toUpperCase())
+    }).concat([...dialogueConfig].map(([key, value]) => `#MWND.000.${key}=${value}`)).join('\n')
     const bgm = ['BGM81', ...music]
     await writeFile(configPath, `${config}\n#START_SCENE=${literal(START_SCENE)}\n#GAMENAME=${literal(validated.title)}\n#BGM.CNT=${bgm.length}\n${bgm.map((name, index) => `#BGM.${String(index).padStart(3, '0')}=${literal(name)},${literal(name)},0,-1,0`).join('\n')}\n`, 'utf8')
     await runCompiler(compiler, ['--const-profile', '0', '-c', '--serial', '--charset', 'utf8', source, join(runtime, 'Scene.pck')], signal)
