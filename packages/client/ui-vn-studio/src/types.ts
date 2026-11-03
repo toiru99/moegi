@@ -132,7 +132,7 @@ export interface SceneVisual {
 
 /** Provider readiness and upload policy, with no stored credential values. */
 export interface MediaStatus {
-  providers: { id: string; kinds: AssetKind[]; ready: boolean; supportsReferences?: boolean }[]
+  providers: { id: string; kinds: AssetKind[]; ready: boolean; supportsReferences?: boolean; reason?: string }[]
   maxAssetBytes: number
   imageModel: string
 }

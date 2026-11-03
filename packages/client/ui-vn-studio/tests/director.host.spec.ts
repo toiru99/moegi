@@ -193,8 +193,8 @@ it('starts authoring and image providers without any legacy engine directories',
   const fixture = await setup(false, {}, { codexImageEnabled: true, codexExecutable: join(tmpdir(), 'vn-no-codex-installed-fixture.exe') })
   try {
     expect(await fixture.ctx.vnMedia.providers.status()).toEqual([
-      { id: 'codex-images', kinds: ['background', 'character'], ready: false, supportsReferences: true },
-      { id: 'openai-images', kinds: ['background', 'character'], ready: false },
+      { id: 'codex-images', kinds: ['background', 'character'], ready: false, supportsReferences: true, reason: expect.stringMatching(/local Codex CLI/i) },
+      { id: 'openai-images', kinds: ['background', 'character'], ready: false, reason: expect.stringMatching(/optional.*API key/i) },
     ])
     await fixture.ctx.vnStudio.create('demo', 'Browser story', 'ko')
     expect(await fixture.ctx.vnStudio.preview('demo')).toMatchObject({ projectId: 'demo', playback: 'browser', url: '/?project=demo' })

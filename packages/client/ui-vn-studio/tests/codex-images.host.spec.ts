@@ -110,10 +110,12 @@ it('reuses one authenticated process and copies only the completed native PNG in
 it('checks image capability and never starts a turn while signed out', async () => {
   const f = await fixture('signed-out')
   expect(await f.provider.ready()).toBe(false)
+  expect(f.provider.unavailableReason?.()).toMatch(/sign in/i)
   await expect(f.provider.generate(request())).rejects.toThrow(/sign in/i)
   expect((await f.requests()).some(x => x.method === 'turn/start')).toBe(false)
   await writeFile(join(f.root, 'mode'), 'unavailable')
   expect(await f.provider.ready()).toBe(false)
+  expect(f.provider.unavailableReason?.()).toMatch(/capability/i)
 })
 
 it('uses authored interface composition and attaches local references without character or scene framing', async () => {

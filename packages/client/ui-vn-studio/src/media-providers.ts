@@ -16,6 +16,8 @@ export interface MediaProvider {
   kinds: AssetKind[]
   supportsReferences?: boolean
   ready(): Promise<boolean>
+  /** Safe, actionable reason from the latest readiness check, never raw provider errors. */
+  unavailableReason?(): string | undefined
   generate(request: MediaRequest): Promise<Buffer>
 }
 
@@ -27,8 +29,11 @@ export class MediaProviders {
     this.entries.set(provider.id, provider)
     return () => { if (this.entries.get(provider.id) === provider) this.entries.delete(provider.id) }
   }
-  async status(): Promise<{ id: string; kinds: AssetKind[]; ready: boolean; supportsReferences?: boolean }[]> {
-    return Promise.all([...this.entries.values()].map(async provider => ({ id: provider.id, kinds: [...provider.kinds], ready: await provider.ready(), ...provider.supportsReferences === undefined ? {} : { supportsReferences: provider.supportsReferences } })))
+  async status(): Promise<{ id: string; kinds: AssetKind[]; ready: boolean; supportsReferences?: boolean; reason?: string }[]> {
+    return Promise.all([...this.entries.values()].map(async provider => {
+      const ready = await provider.ready(), reason = ready ? undefined : provider.unavailableReason?.()
+      return { id: provider.id, kinds: [...provider.kinds], ready, ...provider.supportsReferences === undefined ? {} : { supportsReferences: provider.supportsReferences }, ...reason === undefined ? {} : { reason } }
+    }))
   }
   async generate(id: string, request: MediaRequest): Promise<Buffer> {
     request.signal.throwIfAborted()
@@ -68,6 +73,7 @@ export function openAiImages(options: ImageOptions): MediaProvider {
   return {
     id: 'openai-images', kinds: ['background', 'character'],
     ready: async () => Boolean(await options.readKey()),
+    unavailableReason: () => 'The optional Images API key is not configured. Native Codex images use their own sign-in.',
     async generate(request) {
       request.signal.throwIfAborted()
       if (request.references?.length || request.presentation?.references?.length) throw new Error('Reference image edits require the Codex image provider; this Images API adapter supports new generations only.')

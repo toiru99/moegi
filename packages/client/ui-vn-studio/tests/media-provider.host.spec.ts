@@ -13,7 +13,7 @@ it('registers providers reversibly and reports unconfigured generation honestly'
   const transport = vi.fn<typeof fetch>()
   const provider = openAiImages({ readKey: async () => undefined, model: 'test-image', maxBytes: 1024, timeoutMs: 1000, transport })
   const release = providers.register(provider)
-  expect(await providers.status()).toEqual([{ id: 'openai-images', kinds: ['background', 'character'], ready: false }])
+  expect(await providers.status()).toEqual([{ id: 'openai-images', kinds: ['background', 'character'], ready: false, reason: expect.stringMatching(/optional.*API key/i) }])
   await expect(providers.generate('openai-images', request)).rejects.toThrow(/connect|key/i)
   expect(transport).not.toHaveBeenCalled()
   release()

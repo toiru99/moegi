@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { extname, isAbsolute, join, resolve, sep } from 'node:path'
 import sharp from 'sharp'
 import type { MediaProvider, MediaRequest } from './media-providers.ts'
+import { resolveCodexExecutable } from './codex-executable.ts'
 
 interface CodexImageOptions { executable: string; directory: string; timeoutMs: number; maxBytes: number }
 type JsonObject = Record<string, unknown>
@@ -263,6 +264,7 @@ async function generateImage(connection: Connection, request: MediaRequest, opti
  * @returns A provider whose disposal settles pending work and waits for the local process to exit.
  */
 export function codexImages(options: CodexImageOptions): MediaProvider & { dispose(): Promise<void> } {
+  let availabilityReason: string | undefined
   if (!options.executable || !isAbsolute(options.directory) || !Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1 || !Number.isSafeInteger(options.maxBytes) || options.maxBytes < 1 || options.maxBytes > 20 * 1024 * 1024) throw new Error('Invalid Codex image provider configuration.')
   let disposed = false, starting: Promise<Connection> | undefined
   const lifetime = new AbortController()
@@ -279,7 +281,9 @@ export function codexImages(options: CodexImageOptions): MediaProvider & { dispo
     starting = (async () => {
       await mkdir(options.directory, { recursive: true, mode: 0o700 })
       if (disposed) throw closedError()
-      const connection = new Connection(options, options.directory); connections.add(connection)
+      const executable = await resolveCodexExecutable(options.executable)
+      if (disposed) throw closedError()
+      const connection = new Connection({ ...options, executable }, options.directory); connections.add(connection)
       try {
         await connection.request('initialize', { clientInfo: { name: 'vn_studio_images', title: 'VN Studio', version: '1.0.0' }, capabilities: { experimentalApi: true } })
         connection.send({ method: 'initialized', params: {} })
@@ -290,14 +294,28 @@ export function codexImages(options: CodexImageOptions): MediaProvider & { dispo
   }
   return {
     id: 'codex-images', kinds: ['background', 'character'], supportsReferences: true,
+    unavailableReason: () => availabilityReason,
     async ready() {
-      if (disposed) return false
+      availabilityReason = undefined
+      if (disposed) { availabilityReason = 'The Codex image provider has stopped. Restart the local service.'; return false }
+      let phase: 'connection' | 'account' | 'capability' | 'skill' = 'connection'
       try {
         const connection = await connect()
-        if (!await authenticated(connection)) return false
+        phase = 'account'
+        const account = await connection.request('account/read', { refreshToken: false })
+        if (object(account.account).type !== 'chatgpt') { availabilityReason = 'Sign in to the installed Codex application with ChatGPT before generating images.'; return false }
+        phase = 'capability'
+        if ((await connection.request('modelProvider/capabilities/read', {})).imageGeneration !== true) { availabilityReason = 'The installed Codex connection does not currently report image-generation capability.'; return false }
+        phase = 'skill'
         await imageSkill(connection, options.directory)
         return true
-      } catch { return false }
+      } catch {
+        availabilityReason = { connection: 'The local Codex CLI could not connect. Check its executable and desktop installation.',
+          account: 'The local Codex account status could not be read. Check the installed Codex sign-in.',
+          capability: 'The local Codex image capability could not be checked. Reconnect or update Codex.',
+          skill: 'The imagegen skill is unavailable in local Codex. Enable it before generating images.' }[phase]
+        return false
+      }
     },
     async generate(request) {
       request.signal.throwIfAborted()
